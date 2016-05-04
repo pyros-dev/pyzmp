@@ -31,7 +31,7 @@ if [ $VERSION_EXISTS -eq 1 ]; then
     exit 64
 fi
 
-#TODO : Make sure everything is commited already
+#TODO : Make sure everything is committed already
 #tagging new release
 ${GIT_TAG_CMD}
 
@@ -43,5 +43,4 @@ fi
 #uploading package and pushing tags
 python setup.py sdist upload -r $1 && ${GIT_PUSH_CMD}
 
-#TODO : mix with bloom release to release both at the same time
 # OR maybe we dont need a pypi package at all ??

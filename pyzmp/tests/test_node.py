@@ -14,7 +14,7 @@ from random import randint
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
-import zmp
+import pyzmp
 
 import nose
 from nose.tools import timed, assert_true, assert_false, assert_raises, assert_equal
@@ -31,7 +31,7 @@ from nose.tools import timed, assert_true, assert_false, assert_raises, assert_e
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @timed(5)
 def test_node_termination():
-    n1 = zmp.Node()
+    n1 = pyzmp.Node()
     assert_false(n1.is_alive())
     n1.shutdown()  # shutdown should have no effect here (if not started, same as noop )
     assert_false(n1.is_alive())
@@ -40,7 +40,7 @@ def test_node_termination():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @timed(5)
 def test_node_creation_termination():
-    n1 = zmp.Node()
+    n1 = pyzmp.Node()
     assert_false(n1.is_alive())
     n1.start()
     assert_true(n1.is_alive())
@@ -51,7 +51,7 @@ def test_node_creation_termination():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @timed(5)
 def test_node_double_creation_termination():
-    n1 = zmp.Node()
+    n1 = pyzmp.Node()
     assert_false(n1.is_alive())
     n1.start()
     assert_true(n1.is_alive())
@@ -65,7 +65,7 @@ def test_node_double_creation_termination():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @timed(5)
 def test_node_creation_double_termination():
-    n1 = zmp.Node()
+    n1 = pyzmp.Node()
     assert_false(n1.is_alive())
     n1.start()
     assert_true(n1.is_alive())
@@ -81,7 +81,7 @@ def test_node_creation_args():
     ns = multiprocessing.Manager().Namespace()
     ns.arg = 42
 
-    class TestArgNode(zmp.Node):
+    class TestArgNode(pyzmp.Node):
         def run(self):
             # TODO : find a more obvious way to pass parameters to the child process
             ns.arg -= self._args[0]
@@ -102,7 +102,7 @@ def test_node_creation_kwargs():
     ns = multiprocessing.Manager().Namespace()
     ns.kwarg = 42
 
-    class TestKWArgNode(zmp.Node):
+    class TestKWArgNode(pyzmp.Node):
         def run(self):
             # TODO : find a more obvious way to pass parameters to the child process
             ns.kwarg -= self._kwargs['intval']
@@ -119,14 +119,14 @@ def test_node_creation_kwargs():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @timed(5)
 def test_node_as_context_manager():
-    with zmp.Node() as n1:  # this will __init__ and __enter__
+    with pyzmp.Node() as n1:  # this will __init__ and __enter__
         assert_true(n1.is_alive())
     assert_true(not n1.is_alive())
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @timed(5)
 def test_node_running_as_context_manager():
-    n1 = zmp.Node()
+    n1 = pyzmp.Node()
     n1.start()
     with n1:  # hooking to an already started node
         assert_true(n1.is_alive())
@@ -169,7 +169,7 @@ def test_update_rate():
                                         time_delta=testing_time_delta,
                                         ok_timedelta=acceptable_timedelta)
 
-    n1 = zmp.Node()
+    n1 = pyzmp.Node()
     n1.update = types.MethodType(testing_update_onearg, n1)
 
     assert_false(n1.is_alive())
