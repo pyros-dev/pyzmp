@@ -35,12 +35,6 @@ fi
 #tagging new release
 ${GIT_TAG_CMD}
 
-#doing bloom release
-if [ "$1" = "pypi" ]; then
-    bloom-release pyros --track indigo --rosdistro indigo
-fi
-
 #uploading package and pushing tags
 python setup.py sdist upload -r $1 && ${GIT_PUSH_CMD}
 
-# OR maybe we dont need a pypi package at all ??
