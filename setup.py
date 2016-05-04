@@ -14,11 +14,6 @@ setup(name='pyzmp',
         'pyzmp',
         'pyzmp.tests'
     ],
-    entry_points={
-        'console_scripts': [
-            'pyzmp = pyzmp.__main__:nosemain'
-        ]
-    },
     # this is better than using package data ( since behavior is a bit different from distutils... )
     include_package_data=True,  # use MANIFEST.in during install.
     install_requires=[
@@ -26,9 +21,7 @@ setup(name='pyzmp',
         'six',
         'pyzmq'
     ],
-    test_suite="nose.collector",
-    tests_require=[
-        'nose>=1.3.7'
-    ],
+    setup_requires=['pytest-runner'],
+    tests_require=['pytest'],
     zip_safe=False,  # TODO testing...
 )

@@ -12,7 +12,7 @@ import pyzmp.message
 
 import nose
 from nose.tools import assert_true, assert_false, assert_raises, assert_equal, nottest, istest
-# TODO : PYTEST ?
+# TODO : MOVE TO FULL PYTEST
 # http://pytest.org/latest/contents.html
 # https://github.com/ionelmc/pytest-benchmark
 
@@ -21,6 +21,7 @@ from nose.tools import assert_true, assert_false, assert_raises, assert_equal, n
 
 # Careful : we dont support all fancy methods of the protocol buffer.
 # We restrict ourselves to the methods that we are using in pyzmp.
+
 
 # Generic initialization tests
 def initialize_servicerequest(req):
@@ -124,12 +125,12 @@ def oneline_symmetric_serialize_parse_serviceresponseexception(resp):
 
 # PROTOBUF Implementation test - default
 class TestMessageProtobuf(object):
-    def setUp(self):
+    def setup_method(self, method):
         # Checking protobuf implementation
         if not pyzmp.message.protobuf_implementation_enabled:
             raise nose.SkipTest("Protobuf implementation not supported !")
 
-    def tearDown(self):
+    def teardown_method(self, method):
         # Setting back default implementation
         pass
 
@@ -378,11 +379,11 @@ class TestMessageProtobuf(object):
 
 
 class TestMessageTupleFallback(object):
-    def setUp(self):
+    def setup_method(self, method):
         # Forcing tuple implementation
         pyzmp.message.force_namedtuple_implementation()
 
-    def tearDown(self):
+    def teardown_method(self, method):
         # Setting back default implementation
         pyzmp.message.force_protobuf_implementation()
 

@@ -16,3 +16,13 @@ PyZMP
   :alt: Code issues
 
 PyZMP is a multiprocess library based on ZeroMQ.
+
+Install
+```
+python setup.py develop
+```
+
+Run tests with tox
+```
+tox
+```

@@ -54,12 +54,12 @@ class TestMockHWNodeIPC(object):
         def getlucky(self):
             return self.magic_number
 
-    def setUp(self):
+    def setup_method(self, method):
         # services is already setup globally
         self.hwnode = TestMockHWNodeIPC.HWNode(name="HNode")
         self.hwnodeextra = TestMockHWNodeIPC.HWNode(name="HNodeExtra")
 
-    def tearDown(self):
+    def teardown_method(self, method):
         if self.hwnode.is_alive():
             self.hwnode.shutdown(join=True)
         if self.hwnodeextra.is_alive():
@@ -75,14 +75,14 @@ class TestMockHWNodeIPC(object):
         print("\n" + inspect.currentframe().f_code.co_name)
         assert_false(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld")
         assert_true(helloworld is None)  # service not provided until node starts
 
         self.hwnode.start()
         assert_true(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld", 5)  # we wait a bit to let it time to start
         assert_false(helloworld is None)
         assert_equal(len(helloworld.providers), 1)
@@ -90,7 +90,7 @@ class TestMockHWNodeIPC(object):
         self.hwnode.shutdown()
         assert_false(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld")
         assert_true(helloworld is None)
 
@@ -99,15 +99,15 @@ class TestMockHWNodeIPC(object):
         print("\n" + inspect.currentframe().f_code.co_name)
         assert_false(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print( "Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld")
         assert_true(helloworld is None)  # service not provided until node starts
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld", 1)  # check timeout actually times out
         assert_true(helloworld is None)
 
-        print "Discovering helloworld Service..."
+        print( "Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld", 1, 2)
         assert_true(helloworld is None)
 
@@ -116,7 +116,7 @@ class TestMockHWNodeIPC(object):
         print("\n" + inspect.currentframe().f_code.co_name)
         assert_false(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print( "Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld")
         assert_true(helloworld is None)  # service not provided until node starts
 
@@ -124,7 +124,7 @@ class TestMockHWNodeIPC(object):
         self.hwnodeextra.start()
         assert_true(self.hwnodeextra.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld", 5)  # we wait a bit to let it time to start
         assert_false(helloworld is None)
         assert_equal(len(helloworld.providers), 1)
@@ -132,7 +132,7 @@ class TestMockHWNodeIPC(object):
         self.hwnode.start()
         assert_true(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld", 5, 2)  # we wait until we get 2 providers ( or timeout )
         assert_false(helloworld is None)
         assert_equal(len(helloworld.providers), 2)
@@ -140,7 +140,7 @@ class TestMockHWNodeIPC(object):
         self.hwnode.shutdown()
         assert_false(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld")  # we should have right away 1 provider only
         assert_false(helloworld is None)
         assert_equal(len(helloworld.providers), 1)
@@ -153,7 +153,7 @@ class TestMockHWNodeIPC(object):
         print("\n" + inspect.currentframe().f_code.co_name)
         assert_false(self.hwnode.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld")
         assert_true(helloworld is None)  # service not provided until node starts
 
@@ -161,7 +161,7 @@ class TestMockHWNodeIPC(object):
         self.hwnodeextra.start()
         assert_true(self.hwnodeextra.is_alive())
 
-        print "Discovering helloworld Service..."
+        print("Discovering helloworld Service...")
         helloworld = pyzmp.discover("helloworld", 5)  # we wait a bit to let it time to start
         assert_false(helloworld is None)
         assert_equal(len(helloworld.providers), 1)
@@ -460,12 +460,12 @@ class TestMockHWNodeSocket(TestMockHWNodeIPC):
         def getlucky(self):
             return self.magic_number
 
-    def setUp(self):
+    def setup_method(self, method):
         # services is already setup globally
         self.hwnode = TestMockHWNodeSocket.HWNode(name="HNode", socket_bind="tcp://127.0.0.1:4242")
         self.hwnodeextra = TestMockHWNodeSocket.HWNode(name="HNodeExtra", socket_bind="tcp://127.0.0.1:4243")
 
-    def tearDown(self):
+    def teardown_method(self, method):
         if self.hwnode.is_alive():
             self.hwnode.shutdown(join=True)
         if self.hwnodeextra.is_alive():
