@@ -13,7 +13,7 @@ VERSION=`python setup.py --version`
 
 #if package index is "pypi" we fill in info into git
 if [ "$1" = "pypi" ]; then
-    GIT_TAG_CMD="git tag --VERSION"
+    GIT_TAG_CMD="git tag $VERSION"
     GIT_PUSH_CMD="git push --tags"
 else
     GIT_TAG_CMD="echo git tag skipped when not releasing on main pypi index"
