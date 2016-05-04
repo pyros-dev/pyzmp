@@ -1,9 +1,15 @@
+sudo: false
 language: python
 
-python: 2.7
+branches:
+  except:
+    - gh-pages
+
+python:
+  - 2.7
 
 install:
-- pip install tox-travis
+  - pip install tox tox-travis
 
 script:
-- tox
+  - tox
