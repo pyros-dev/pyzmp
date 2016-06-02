@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import contextlib
+import six
 import time
 from collections import namedtuple
 import zmq
@@ -33,8 +34,8 @@ services = manager.dict()
 def service_provider_cm(node_name, svc_address, node_providers):
     # advertising services
     services_lock.acquire()
-    for svc_name, svc_endpoint in node_providers.iteritems():
-        #print('-> Providing {0} with {1}'.format(svc_name, svc_endpoint))
+    for svc_name, svc_endpoint in six.iteritems(node_providers):
+        # print('-> Providing {0} with {1}'.format(svc_name, svc_endpoint))
         # needs reassigning to propagate update to manager
         services[svc_name] = (services[svc_name] if svc_name in services else []) + [(node_name, svc_address)]
     services_lock.release()
@@ -43,8 +44,8 @@ def service_provider_cm(node_name, svc_address, node_providers):
 
     # concealing services
     services_lock.acquire()
-    for svc_name, svc_endpoint in node_providers.iteritems():
-        #print('-> Unproviding {0}'.format(svc_name))
+    for svc_name, svc_endpoint in six.iteritems(node_providers):
+        # print('-> Unproviding {0}'.format(svc_name))
         services[svc_name] = [(n, a) for (n, a) in services[svc_name] if n != node_name]
     services_lock.release()
 

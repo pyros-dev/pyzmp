@@ -19,7 +19,9 @@ setup(name='pyzmp',
     install_requires=[
         'tblib',  # this might not always install six (latest version does not)
         'six',
-        'pyzmq'
+        'pyzmq',
+        'pytest',  # since tests are embedded in package
+        'pytest-timeout'
     ],
     setup_requires=['pytest-runner'],
     tests_require=['pytest'],

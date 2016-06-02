@@ -16,9 +16,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 import time
 import pyzmp
 
-import nose
-from nose.tools import timed, assert_true, assert_false, assert_raises, assert_equal
-# TODO : PYTEST ?
+import pytest
 # http://pytest.org/latest/contents.html
 # https://github.com/ionelmc/pytest-benchmark
 
@@ -27,55 +25,56 @@ from nose.tools import timed, assert_true, assert_false, assert_raises, assert_e
 
 # TODO : Test Node exception : correctly transmitted, node still keeps spinning...
 
+
 ### TESTING NODE CREATION / TERMINATION ###
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_termination():
     n1 = pyzmp.Node()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.shutdown()  # shutdown should have no effect here (if not started, same as noop )
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_creation_termination():
     n1 = pyzmp.Node()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.start()
-    assert_true(n1.is_alive())
+    assert n1.is_alive()
     n1.shutdown()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_double_creation_termination():
     n1 = pyzmp.Node()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.start()
-    assert_true(n1.is_alive())
+    assert n1.is_alive()
     n1.start()  # this shuts down and restart the node
-    assert_true(n1.is_alive())
+    assert n1.is_alive()
 
     n1.shutdown()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_creation_double_termination():
     n1 = pyzmp.Node()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.start()
-    assert_true(n1.is_alive())
+    assert n1.is_alive()
     n1.shutdown()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.shutdown()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_creation_args():
 
     ns = multiprocessing.Manager().Namespace()
@@ -87,16 +86,16 @@ def test_node_creation_args():
             ns.arg -= self._args[0]
 
     n1 = TestArgNode(args=(ns.arg,))
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.start()
-    assert_true(n1.is_alive())
+    assert n1.is_alive()
     n1.shutdown()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
-    assert_equal(ns.arg, 0)
+    assert ns.arg ==  0
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_creation_kwargs():
 
     ns = multiprocessing.Manager().Namespace()
@@ -108,29 +107,29 @@ def test_node_creation_kwargs():
             ns.kwarg -= self._kwargs['intval']
 
     n1 = TestKWArgNode(kwargs={'intval': ns.kwarg, })
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
     n1.start()
-    assert_true(n1.is_alive())
+    assert n1.is_alive()
     n1.shutdown()
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
-    assert_equal(ns.kwarg, 0)
+    assert ns.kwarg ==  0
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_as_context_manager():
     with pyzmp.Node() as n1:  # this will __init__ and __enter__
-        assert_true(n1.is_alive())
-    assert_true(not n1.is_alive())
+        assert n1.is_alive()
+    assert not n1.is_alive()
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@timed(5)
+@pytest.mark.timeout(5)
 def test_node_running_as_context_manager():
     n1 = pyzmp.Node()
     n1.start()
     with n1:  # hooking to an already started node
-        assert_true(n1.is_alive())
-    assert_true(not n1.is_alive())
+        assert n1.is_alive()
+    assert not n1.is_alive()
 
 
 def test_update_rate():
@@ -172,7 +171,7 @@ def test_update_rate():
     n1 = pyzmp.Node()
     n1.update = types.MethodType(testing_update_onearg, n1)
 
-    assert_false(n1.is_alive())
+    assert not n1.is_alive()
 
     # Starting the node in the same thread, to be able to test simply by shared memory.
     # TODO : A Node that can choose process or thread run ( on start() instead of init() maybe ? )
@@ -193,7 +192,7 @@ def test_update_rate():
             a=acceptable_timedelta[i])
         )
 
-        assert_true(acceptable_timedelta[i])
+        assert acceptable_timedelta[i]
 
 
 

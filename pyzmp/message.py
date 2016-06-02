@@ -29,6 +29,7 @@ except (ImportError):
 
 protobuf_implementation_enabled = False
 
+
 #TODO : check python3 to avoid too much hacking here
 def force_protobuf_implementation():
 
