@@ -8,35 +8,14 @@ branches:
 
 python:
   - 2.7
-  ########### Tests hang ! ##############
+  # Tests hang !
   #- 3.4
 
   #- pypy
   #- pypy3
-
-env:
-  # This will check any ROS distro supported on this OS
-  - DISTRO=indigo
-  - DISTRO=jade
-
-# This is the same for all builds
-before_install:
-  # Install ROS. We need it on system if tox uses site-packages.
-  - sudo sh -c 'echo "deb http://packages.ros.org/ros-shadow-fixed/ubuntu trusty main" > /etc/apt/sources.list.d/ros-latest.list'
-  - wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
-  - sudo apt-get update
-  # Install and initialize rosdep
-  - sudo apt-get install python-rosdep -y
-  - sudo `which rosdep` init
-  - rosdep update
-  # Install package ROS dependencies (needed until we can package a standard python deb for pyros-setup. see https://github.com/asmodehn/pyros-setup/issues/16)
-  - rosdep install --default-yes --from-paths ./ --rosdistro $DISTRO
 
 install:
   - pip install tox tox-travis
 
 script:
   - tox
-
-notifications:
-  email: false
