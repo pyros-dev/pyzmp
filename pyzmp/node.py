@@ -182,12 +182,21 @@ class Node(multiprocessing.Process):
         # TODO : remove the use of _popen and replace with call to is_alive()
         if self._popen is not None:
             # if already started, we shutdown and join before restarting
+            # not timeout will bock here (default join behavior).
+            # otherwise we simply use the same timeout.
             self.shutdown(join=True, timeout=timeout)
             self.start()  # recursive to try again if needed
         else:
             super(Node, self).start()
-        return self.started.wait(timeout=timeout)
-        # TODO : here we should probably return the zmp url as interface to connect to the node...
+
+        # timeout None means we dont want to wait and ensure it has started (default behavior from multiprocess.Process)
+        # Attempting : three value logic here (maybe async() type function with future is better than TVL ???)
+        if timeout:
+            return self.started.wait(timeout=timeout)  # blocks until we know true or false
+            # TODO : here we should probably return the zmp url as interface to connect to the node...
+        else:
+            # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
+            return None  # return immediately, but we don't know... is_alive() must be called afterwards.
 
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?

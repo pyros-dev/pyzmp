@@ -41,7 +41,18 @@ def test_node_termination():
 def test_node_creation_termination():
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.start()
+    n1.start()
+    assert n1.is_alive()
+    assert n1.shutdown()
+    assert not n1.is_alive()
+
+
+# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
+@pytest.mark.timeout(5)
+def test_node_determinist_creation_termination():
+    n1 = pyzmp.Node()
+    assert not n1.is_alive()
+    assert n1.start(5)
     assert n1.is_alive()
     assert n1.shutdown()
     assert not n1.is_alive()
@@ -52,9 +63,23 @@ def test_node_creation_termination():
 def test_node_double_creation_termination():
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.start()
+    n1.start()
     assert n1.is_alive()
-    assert n1.start()  # this shuts down and restart the node
+    n1.start()  # this shuts down and restart the node
+    assert n1.is_alive()
+
+    assert n1.shutdown()
+    assert not n1.is_alive()
+
+
+# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
+@pytest.mark.timeout(5)
+def test_node_determinist_double_creation_termination():
+    n1 = pyzmp.Node()
+    assert not n1.is_alive()
+    assert n1.start(5)
+    assert n1.is_alive()
+    assert n1.start(5)  # this shuts down and restart the node
     assert n1.is_alive()
 
     assert n1.shutdown()
@@ -66,7 +91,7 @@ def test_node_double_creation_termination():
 def test_node_creation_double_termination():
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.start()
+    n1.start()
     assert n1.is_alive()
     assert n1.shutdown()
     assert not n1.is_alive()
@@ -89,7 +114,7 @@ def test_node_creation_args():
 
     n1 = TestArgNode(args=(ns.arg,))
     assert not n1.is_alive()
-    assert n1.start()
+    n1.start()
     assert n1.is_alive()
     assert n1.shutdown()
     assert not n1.is_alive()
@@ -112,7 +137,7 @@ def test_node_creation_kwargs():
 
     n1 = TestKWArgNode(kwargs={'intval': ns.kwarg, })
     assert not n1.is_alive()
-    assert n1.start()
+    n1.start()
     assert n1.is_alive()
     assert n1.shutdown()
     assert not n1.is_alive()
@@ -132,7 +157,7 @@ def test_node_as_context_manager():
 @pytest.mark.timeout(5)
 def test_node_running_as_context_manager():
     n1 = pyzmp.Node()
-    assert n1.start()
+    n1.start()
     with n1:  # hooking to an already started node
         assert n1.is_alive()
     assert not n1.is_alive()
