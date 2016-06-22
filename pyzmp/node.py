@@ -141,6 +141,7 @@ class Node(multiprocessing.Process):
         super(Node, self).__init__(name=name, args=args or (), kwargs=kwargs or {})
         self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
         self.exit = multiprocessing.Event()
+        self.started = multiprocessing.Event()
         self.listeners = {}
         self._providers = {}
         self.tmpdir = tempfile.mkdtemp(prefix='zmp-' + self.name + '-')
@@ -173,16 +174,20 @@ class Node(multiprocessing.Process):
 
     # TODO : shortcut to discover/build only services provided by this node ?
 
-    def start(self):
+    def start(self, timeout=5):
         """
         Start child process
+        :param timeout: the maximum time to wait for child process to report it has actually started.
         """
+        # TODO : remove the use of _popen and replace with call to is_alive()
         if self._popen is not None:
             # if already started, we shutdown and join before restarting
             self.shutdown(join=True)
-            self.start()
+            self.start()  # recursive to try again if needed
         else:
             super(Node, self).start()
+        return self.started.wait(timeout=timeout)
+
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
@@ -206,6 +211,10 @@ class Node(multiprocessing.Process):
 
             # Starting the clock
             start = time.time()
+
+            # signalling startup
+            self.started.set()
+            logging.info("[{self.name}] Node started...".format(**locals()))
 
             # loop listening to connection
             while not self.exit.is_set():
@@ -261,6 +270,10 @@ class Node(multiprocessing.Process):
 
                 self.update(timedelta)
 
+            # removing startup signal
+            self.started.clear()
+            logging.info("[{self.name}] Node stopped...".format(**locals()))
+
         # all context managers are destroyed properly here
 
     def update(self, timedelta):
@@ -272,7 +285,7 @@ class Node(multiprocessing.Process):
         """
         pass
 
-    def shutdown(self, join=True):
+    def shutdown(self, join=True, timeout=5):
         """
         Clean shutdown of the node.
         :param join: optionally wait for the process to end (default : True)
@@ -282,10 +295,10 @@ class Node(multiprocessing.Process):
             print("Shutdown initiated")
             self.exit.set()
             if join:
-                self.join()
+                self.join(timeout=timeout)
                 # TODO : after terminate, not before
                 self._popen = None  # this should permit start to run again
             # TODO : timeout before forcing terminate (SIGTERM)
-        pass
+        return not self.is_alive()  # True if joined properly, False if not joined just yet.
 
 
