@@ -174,7 +174,7 @@ class Node(multiprocessing.Process):
 
     # TODO : shortcut to discover/build only services provided by this node ?
 
-    def start(self, timeout=5):
+    def start(self, timeout=None):
         """
         Start child process
         :param timeout: the maximum time to wait for child process to report it has actually started.
@@ -182,11 +182,12 @@ class Node(multiprocessing.Process):
         # TODO : remove the use of _popen and replace with call to is_alive()
         if self._popen is not None:
             # if already started, we shutdown and join before restarting
-            self.shutdown(join=True)
+            self.shutdown(join=True, timeout=timeout)
             self.start()  # recursive to try again if needed
         else:
             super(Node, self).start()
         return self.started.wait(timeout=timeout)
+        # TODO : here we should probably return the zmp url as interface to connect to the node...
 
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
@@ -285,7 +286,7 @@ class Node(multiprocessing.Process):
         """
         pass
 
-    def shutdown(self, join=True, timeout=5):
+    def shutdown(self, join=True, timeout=None):
         """
         Clean shutdown of the node.
         :param join: optionally wait for the process to end (default : True)
