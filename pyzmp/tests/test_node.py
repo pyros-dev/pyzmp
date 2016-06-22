@@ -32,7 +32,8 @@ import pytest
 def test_node_termination():
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.shutdown()  # shutdown should have no effect here (if not started, same as noop )
+    exitcode = n1.shutdown()  # shutdown should have no effect here (if not started, same as noop )
+    assert exitcode is None  # exitcode should be None (process didn't start and didn't stop so no exit code)
     assert not n1.is_alive()
 
 
@@ -43,18 +44,21 @@ def test_node_creation_termination():
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0  # default node should spin without issues
     assert not n1.is_alive()
 
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@pytest.mark.timeout(5)
-def test_node_determinist_creation_termination():
+@pytest.mark.timeout(500)
+def test_node_timeout_creation_termination():
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.start(5)
+    started = n1.start(1)
+    assert started
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
 
@@ -68,21 +72,23 @@ def test_node_double_creation_termination():
     n1.start()  # this shuts down and restart the node
     assert n1.is_alive()
 
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
-def test_node_determinist_double_creation_termination():
+def test_node_timeout_double_creation_termination():
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.start(5)
+    assert n1.start(1)
     assert n1.is_alive()
-    assert n1.start(5)  # this shuts down and restart the node
+    assert n1.start(1)  # this shuts down and restart the node
     assert n1.is_alive()
 
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
 
@@ -93,9 +99,11 @@ def test_node_creation_double_termination():
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0  # the exit code is still 0 since we didn't restart...
     assert not n1.is_alive()
 
 
@@ -107,14 +115,16 @@ def test_node_creation_args():
     ns.arg = 42
 
     class TestArgNode(pyzmp.Node):
-        def run(self, *args, **kwargs):
+        def update(self, *args, **kwargs):
             ns.arg -= args[0]
+            return ns.arg
 
     n1 = TestArgNode(args=(ns.arg,))
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
     assert ns.arg == 0
@@ -127,14 +137,16 @@ def test_node_creation_args_delegate():
     ns = multiprocessing.Manager().Namespace()
     ns.arg = 42
 
-    def arguser(self, fortytwo):
+    def arguser(fortytwo, **kwargs):  # kwargs is there to accept extra arguments nicely (timedelta)
         ns.arg -= fortytwo
+        return ns.arg
 
     n1 = pyzmp.Node(args=(ns.arg,), target=arguser)
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
     assert ns.arg == 0
@@ -149,14 +161,16 @@ def test_node_creation_kwargs():
     ns.kwarg = 42
 
     class TestKWArgNode(pyzmp.Node):
-        def run(self, *args, **kwargs):
+        def update(self, *args, **kwargs):
             ns.kwarg -= kwargs.get('intval')
+            return ns.kwarg
 
     n1 = TestKWArgNode(kwargs={'intval': ns.kwarg, })
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
     assert ns.kwarg == 0
@@ -169,14 +183,16 @@ def test_node_creation_kwargs_delegate():
     ns = multiprocessing.Manager().Namespace()
     ns.kwarg = 42
 
-    def kwarguser(self, intval):
+    def kwarguser(intval, **kwargs):  # kwargs is there to accept extra arguments nicely (timedelta)
         ns.kwarg -= intval
+        return ns.kwarg
 
     n1 = pyzmp.Node(kwargs={'intval': ns.kwarg, }, target=kwarguser)
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    assert n1.shutdown()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
     assert not n1.is_alive()
 
     assert ns.kwarg == 0
@@ -243,7 +259,7 @@ def test_update_rate():
 
     # Starting the node in the same thread, to be able to test simply by shared memory.
     # TODO : A Node that can choose process or thread run ( on start() instead of init() maybe ? )
-    runthread = threading.Thread(target=n1.run)
+    runthread = threading.Thread(target=n1.update)
     runthread.daemon = True  # to kill this when test is finished
     runthread.start()
 

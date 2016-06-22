@@ -146,7 +146,7 @@ class Node(object):
             'target': self._noderun,
         }
         self._process = multiprocessing.Process(**self._pargs)
-        self._target = target
+        self._target = target or self.update
 
         self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
         self.exit = multiprocessing.Event()
@@ -168,6 +168,12 @@ class Node(object):
         # make sure we cleanup when we exit
         self.shutdown()
 
+    def has_started(self):
+        """
+        :return: True if the node has started (update() called at least once). Might still be alive, or not...
+        """
+        return self.started.is_set()
+
     ### Process API delegation ###
     def is_alive(self):
         return self._process.is_alive()
@@ -177,13 +183,20 @@ class Node(object):
 
     @property
     def name(self):
-        return self._process.name
+        if self._process:
+            return self._process.name
+        else:
+            return self._pargs.get('name', "ZMPNode")
 
     @name.setter
     def name(self, name):
-        self._process.name = name
-        # only reset the name arg if it was accepted by the setter
-        self._pargs.set('name', self._process.name)
+        if self._process:
+            self._process.name = name
+            # only reset the name arg if it was accepted by the setter
+            self._pargs.set('name', self._process.name)
+        else:
+            # TODO : maybe we should be a bit more strict here ?
+            self._pargs.set('name', name)
 
     @property
     def daemon(self):
@@ -191,7 +204,10 @@ class Node(object):
         Return whether process is a daemon
         :return:
         """
-        return self._daemonic
+        if self._process:
+            return self._process.daemon
+        else:
+            return self._pargs.get('daemonic', False)
 
     @daemon.setter
     def daemon(self, daemonic):
@@ -200,7 +216,10 @@ class Node(object):
         :param daemonic:
         :return:
         """
-        self._process.daemonic = daemonic
+        if self._process:
+            self._process.daemonic = daemonic
+        else:
+            self._pargs['daemonic']= daemonic
 
     @property
     def authkey(self):
@@ -218,14 +237,20 @@ class Node(object):
         """
         Return exit code of process or `None` if it has yet to stop
         """
-        return self._process.exitcode
+        if self._process:
+            return self._process.exitcode
+        else:
+            return None
 
     @property
     def ident(self):
         """
         Return identifier (PID) of process or `None` if it has yet to start
         """
-        return self._process.ident
+        if self._process:
+            return self._process.ident
+        else:
+            return None
 
     def __repr__(self):
         # TODO : improve this
@@ -236,30 +261,32 @@ class Node(object):
         Start child process
         :param timeout: the maximum time to wait for child process to report it has actually started.
         """
-        # TODO : remove the use of _popen and replace with call to is_alive()
+
+        # we lazily create our process delegate (with same arguments)
+        self._process = multiprocessing.Process(**self._pargs)
+
         if self.is_alive():
             # if already started, we shutdown and join before restarting
             # not timeout will bock here (default join behavior).
             # otherwise we simply use the same timeout.
-            self.shutdown(join=True, timeout=timeout)
+            self.shutdown(join=True, timeout=timeout)  # TODO : only restart if no error (check exitcode)
             self.start(timeout=timeout)  # recursive to try again if needed
         else:
             self._process.start()
 
-        # timeout None means we dont want to wait and ensure it has started (default behavior from multiprocess.Process)
-        # Attempting : three value logic here (maybe async() type function with future is better than TVL ???)
-        if timeout:
-            return self.started.wait(timeout=timeout)  # blocks until we know true or false
-            # TODO : here we should probably return the zmp url as interface to connect to the node...
-        else:
-            # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
-            return None  # return immediately, but we don't know... is_alive() must be called afterwards.
+        # timeout None means we want to wait and ensure it has started
+        # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
+        return self.started.wait(timeout=timeout)  # blocks until we know true or false
+        # TODO : here we should probably return the zmp url as interface to connect to the node...
+        # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
 
     def _noderun(self, *args, **kwargs):
         # TODO : make use of the arguments since run is now the target...
+
+        exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
 
         #print('Starting {node} [{pid}] => {address}'.format(node=self.name, pid=self.pid, address=self._svc_address))
 
@@ -280,10 +307,7 @@ class Node(object):
             # Starting the clock
             start = time.time()
 
-            # signalling startup
-            self.started.set()
-            logging.info("[{self.name}] Node started...".format(**locals()))
-
+            first_loop = True
             # loop listening to connection
             while not self.exit.is_set():
 
@@ -336,14 +360,28 @@ class Node(object):
                 timedelta = now - start
                 start = now
 
-                # replacing the original Process.run() call, passing arguments
-                if self._target:
-                    self._target(*args, **kwargs)
-                # self.update(timedelta)
+                # by default we keep spinning (still dealing with services and stuff here)
+                loop_again = True
 
-            # removing startup signal
-            self.started.clear()
-            logging.info("[{self.name}] Node stopped...".format(**locals()))
+                # replacing the original Process.run() call, passing arguments to our target
+                if self._target:
+                    # bwcompat
+                    kwargs['timedelta'] = timedelta
+
+                    # TODO : use return code to determine when/how we need to run this the next time...
+                    # Also we need to keep the exit status to be able to call external process as an update...
+                    exitstatus = self._target(*args, **kwargs)
+
+                if first_loop:
+                    # signalling startup only at the end of the loop, only the first time
+                    self.started.set()
+                    logging.info("[{self.name}] Node started...".format(**locals()))
+
+                if exitstatus is not None:
+                    break
+
+        logging.info("[{self.name}] Node stopped...".format(**locals()))
+        return exitstatus  # returning last exit status from the update function
 
         # all context managers are destroyed properly here
 
@@ -367,16 +405,17 @@ class Node(object):
 
     # TODO : shortcut to discover/build only services provided by this node ?
 
+    # Note this is NOT the same usage as "run()" from Process :
+    # it is called inside a loop that it does not directly control...
+    # TOOD : think about it and improve (Entity System integration ? Pool + Futures integration ?)
     def update(self, *args, **kwargs):
         """
         Runs at every update cycle in the node process/thread.
         Usually you want to override this method to extend the behavior of the node in your implementation
-        :return:
+        :return: integer as exitcode to stop the node, or None to keep looping...
         """
-        pass
-
-    # To have similar API to multiprocessing.Process and be able to override run() instead of update() (adding args)
-    run = update
+        # TODO : Check which way is better (can also be used to run external process, other functions, like Process)
+        return None  # we keep looping by default (need to deal with services here...)
 
     def shutdown(self, join=True, timeout=None):
         """
@@ -392,8 +431,7 @@ class Node(object):
                 # TODO : after terminate, not before
                 # self._popen = None  # this should permit start to run again
             # TODO : timeout before forcing terminate (SIGTERM)
-        if not self.is_alive():
-            # we recreate our process delegate (with same arguments)
-            self._process = multiprocessing.Process(**self._pargs)
-        return not self.is_alive()
+
+        exitcode = self._process.exitcode
+        return exitcode
 
