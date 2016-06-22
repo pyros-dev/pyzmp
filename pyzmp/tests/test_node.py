@@ -107,10 +107,8 @@ def test_node_creation_args():
     ns.arg = 42
 
     class TestArgNode(pyzmp.Node):
-        def run(self):
-            # TODO : find a more obvious way to pass parameters to the child process
-            ns.arg -= self._args[0]
-            super(TestArgNode, self).run()  # this is required to register this node as started
+        def run(self, *args, **kwargs):
+            ns.arg -= args[0]
 
     n1 = TestArgNode(args=(ns.arg,))
     assert not n1.is_alive()
@@ -151,10 +149,8 @@ def test_node_creation_kwargs():
     ns.kwarg = 42
 
     class TestKWArgNode(pyzmp.Node):
-        def run(self):
-            # TODO : find a more obvious way to pass parameters to the child process
-            ns.kwarg -= self._kwargs['intval']
-            super(TestKWArgNode, self).run()  # this is required to register this node as started
+        def run(self, *args, **kwargs):
+            ns.kwarg -= kwargs.get('intval')
 
     n1 = TestKWArgNode(kwargs={'intval': ns.kwarg, })
     assert not n1.is_alive()

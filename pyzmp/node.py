@@ -129,7 +129,7 @@ class Node(object):
     EndPoint = namedtuple("EndPoint", "self func")
 
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
-    def __init__(self, name='node', socket_bind=None, context_manager=None, args=None, kwargs=None):
+    def __init__(self, name='node', socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
         """
         Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
         :param name: Name of the node
@@ -143,9 +143,10 @@ class Node(object):
             'name': name,
             'args': args or (),
             'kwargs': kwargs or {},
-            'target': self.run,
+            'target': self._noderun,
         }
         self._process = multiprocessing.Process(**self._pargs)
+        self._target = target
 
         self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
         self.exit = multiprocessing.Event()
@@ -254,18 +255,10 @@ class Node(object):
             # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
             return None  # return immediately, but we don't know... is_alive() must be called afterwards.
 
-
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
 
-    def run(self):
-        """
-        Method to be run in sub-process; can be overridden in sub-class
-        """
-        if self._target:
-            self._target(*self._args, **self._kwargs)
-
-    def target(self, *args, **kwargs):
+    def _noderun(self, *args, **kwargs):
         # TODO : make use of the arguments since run is now the target...
 
         #print('Starting {node} [{pid}] => {address}'.format(node=self.name, pid=self.pid, address=self._svc_address))
@@ -343,7 +336,10 @@ class Node(object):
                 timedelta = now - start
                 start = now
 
-                self.update(timedelta)
+                # replacing the original Process.run() call, passing arguments
+                if self._target:
+                    self._target(*args, **kwargs)
+                # self.update(timedelta)
 
             # removing startup signal
             self.started.clear()
@@ -371,15 +367,16 @@ class Node(object):
 
     # TODO : shortcut to discover/build only services provided by this node ?
 
-
-    def update(self, timedelta):
+    def update(self, *args, **kwargs):
         """
         Runs at every update cycle in the node process/thread.
         Usually you want to override this method to extend the behavior of the node in your implementation
-        :param: timedelta : the time spent since the last call
         :return:
         """
         pass
+
+    # To have similar API to multiprocessing.Process and be able to override run() instead of update() (adding args)
+    run = update
 
     def shutdown(self, join=True, timeout=None):
         """
