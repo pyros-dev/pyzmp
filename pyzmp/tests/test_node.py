@@ -124,6 +124,27 @@ def test_node_creation_args():
 
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
+def test_node_creation_args_delegate():
+
+    ns = multiprocessing.Manager().Namespace()
+    ns.arg = 42
+
+    def arguser(self, fortytwo):
+        ns.arg -= fortytwo
+
+    n1 = pyzmp.Node(args=(ns.arg,), target=arguser)
+    assert not n1.is_alive()
+    n1.start()
+    assert n1.is_alive()
+    assert n1.shutdown()
+    assert not n1.is_alive()
+
+    assert ns.arg == 0
+
+
+
+# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
+@pytest.mark.timeout(5)
 def test_node_creation_kwargs():
 
     ns = multiprocessing.Manager().Namespace()
@@ -136,6 +157,26 @@ def test_node_creation_kwargs():
             super(TestKWArgNode, self).run()  # this is required to register this node as started
 
     n1 = TestKWArgNode(kwargs={'intval': ns.kwarg, })
+    assert not n1.is_alive()
+    n1.start()
+    assert n1.is_alive()
+    assert n1.shutdown()
+    assert not n1.is_alive()
+
+    assert ns.kwarg == 0
+
+
+# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
+@pytest.mark.timeout(5)
+def test_node_creation_kwargs_delegate():
+
+    ns = multiprocessing.Manager().Namespace()
+    ns.kwarg = 42
+
+    def kwarguser(self, intval):
+        ns.kwarg -= intval
+
+    n1 = pyzmp.Node(kwargs={'intval': ns.kwarg, }, target=kwarguser)
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()

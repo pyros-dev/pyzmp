@@ -124,21 +124,29 @@ def node_cm(node_name, svc_address):
 
 # TODO : Nodelet ( thread, with fast intraprocess zmq comm - entity system design /vs/threadpool ?)
 # CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
-class Node(multiprocessing.Process):
+class Node(object):
 
     EndPoint = namedtuple("EndPoint", "self func")
 
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
     def __init__(self, name='node', socket_bind=None, context_manager=None, args=None, kwargs=None):
         """
-        Initializes a Process
+        Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
         :param name: Name of the node
         :param socket_bind: the string describing how to bind the ZMQ socket ( IPC, TCP, etc. )
         :param context_manager: a context_manager to be used with run (in a with statement)
         :return:
         """
         # TODO check name unicity
-        super(Node, self).__init__(name=name, args=args or (), kwargs=kwargs or {})
+        # using process as delegate
+        self._pargs = {
+            'name': name,
+            'args': args or (),
+            'kwargs': kwargs or {},
+            'target': self.run,
+        }
+        self._process = multiprocessing.Process(**self._pargs)
+
         self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
         self.exit = multiprocessing.Event()
         self.started = multiprocessing.Event()
@@ -151,7 +159,7 @@ class Node(multiprocessing.Process):
     def __enter__(self):
         # __enter__ is called only if we pass this instance to with statement ( after __init__ )
         # start only if needed (so that we can hook up a context manager to a running node) :
-        if self._popen is None:
+        if not self.is_alive():
             self.start()
         return self
 
@@ -159,20 +167,68 @@ class Node(multiprocessing.Process):
         # make sure we cleanup when we exit
         self.shutdown()
 
-    def provides(self, svc_callback, service_name=None):
-        service_name = service_name or svc_callback.__name__
-        # we store an endpoint ( bound method or unbound function )
-        self._providers[service_name] = Node.EndPoint(
-                self=getattr(svc_callback, '__self__', None),
-                func=getattr(svc_callback, '__func__', svc_callback),
-        )
+    ### Process API delegation ###
+    def is_alive(self):
+        return self._process.is_alive()
 
-    def withholds(self, service_name):
-        service_name = getattr(service_name, '__name__', service_name)
-        # we store an endpoint ( bound method or unbound function )
-        self._providers.pop(service_name)
+    def join(self, timeout=None):
+        return self._process.join(timeout=timeout)
 
-    # TODO : shortcut to discover/build only services provided by this node ?
+    @property
+    def name(self):
+        return self._process.name
+
+    @name.setter
+    def name(self, name):
+        self._process.name = name
+        # only reset the name arg if it was accepted by the setter
+        self._pargs.set('name', self._process.name)
+
+    @property
+    def daemon(self):
+        """
+        Return whether process is a daemon
+        :return:
+        """
+        return self._daemonic
+
+    @daemon.setter
+    def daemon(self, daemonic):
+        """
+        Set whether process is a daemon
+        :param daemonic:
+        :return:
+        """
+        self._process.daemonic = daemonic
+
+    @property
+    def authkey(self):
+        return self._process.authkey
+
+    @authkey.setter
+    def authkey(self, authkey):
+        """
+        Set authorization key of process
+        """
+        self._process.authkey = authkey
+
+    @property
+    def exitcode(self):
+        """
+        Return exit code of process or `None` if it has yet to stop
+        """
+        return self._process.exitcode
+
+    @property
+    def ident(self):
+        """
+        Return identifier (PID) of process or `None` if it has yet to start
+        """
+        return self._process.ident
+
+    def __repr__(self):
+        # TODO : improve this
+        return self._process.__repr__()
 
     def start(self, timeout=None):
         """
@@ -180,14 +236,14 @@ class Node(multiprocessing.Process):
         :param timeout: the maximum time to wait for child process to report it has actually started.
         """
         # TODO : remove the use of _popen and replace with call to is_alive()
-        if self._popen is not None:
+        if self.is_alive():
             # if already started, we shutdown and join before restarting
             # not timeout will bock here (default join behavior).
             # otherwise we simply use the same timeout.
             self.shutdown(join=True, timeout=timeout)
-            self.start()  # recursive to try again if needed
+            self.start(timeout=timeout)  # recursive to try again if needed
         else:
-            super(Node, self).start()
+            self._process.start()
 
         # timeout None means we dont want to wait and ensure it has started (default behavior from multiprocess.Process)
         # Attempting : three value logic here (maybe async() type function with future is better than TVL ???)
@@ -201,7 +257,16 @@ class Node(multiprocessing.Process):
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
+
     def run(self):
+        """
+        Method to be run in sub-process; can be overridden in sub-class
+        """
+        if self._target:
+            self._target(*self._args, **self._kwargs)
+
+    def target(self, *args, **kwargs):
+        # TODO : make use of the arguments since run is now the target...
 
         #print('Starting {node} [{pid}] => {address}'.format(node=self.name, pid=self.pid, address=self._svc_address))
 
@@ -286,6 +351,27 @@ class Node(multiprocessing.Process):
 
         # all context managers are destroyed properly here
 
+    def terminate(self):
+        return self._process.terminate()
+
+    ### Node specific API ###
+
+    def provides(self, svc_callback, service_name=None):
+        service_name = service_name or svc_callback.__name__
+        # we store an endpoint ( bound method or unbound function )
+        self._providers[service_name] = Node.EndPoint(
+                self=getattr(svc_callback, '__self__', None),
+                func=getattr(svc_callback, '__func__', svc_callback),
+        )
+
+    def withholds(self, service_name):
+        service_name = getattr(service_name, '__name__', service_name)
+        # we store an endpoint ( bound method or unbound function )
+        self._providers.pop(service_name)
+
+    # TODO : shortcut to discover/build only services provided by this node ?
+
+
     def update(self, timedelta):
         """
         Runs at every update cycle in the node process/thread.
@@ -301,14 +387,16 @@ class Node(multiprocessing.Process):
         :param join: optionally wait for the process to end (default : True)
         :return: None
         """
-        if self._popen is not None:  # check if process started
+        if self.is_alive():  # check if process started
             print("Shutdown initiated")
             self.exit.set()
             if join:
                 self.join(timeout=timeout)
                 # TODO : after terminate, not before
-                self._popen = None  # this should permit start to run again
+                # self._popen = None  # this should permit start to run again
             # TODO : timeout before forcing terminate (SIGTERM)
-        return not self.is_alive()  # True if joined properly, False if not joined just yet.
-
+        if not self.is_alive():
+            # we recreate our process delegate (with same arguments)
+            self._process = multiprocessing.Process(**self._pargs)
+        return not self.is_alive()
 
