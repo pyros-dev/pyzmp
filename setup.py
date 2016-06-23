@@ -20,8 +20,11 @@ setup(name='pyzmp',
         'tblib',  # this might not always install six (latest version does not)
         'six',
         'pyzmq',
-        'pytest',  # since tests are embedded in package
-        'pytest-timeout'
+        # since tests are embedded in package
+        'pytest-timeout',
+        # Careful : upon install plugins can be resolved instead of core pytest package
+        # => pytest should be listed last here...
+        'pytest',
     ],
     setup_requires=['pytest-runner'],
     tests_require=['pytest'],
