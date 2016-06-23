@@ -26,10 +26,9 @@ import pytest
 # TODO : Test Node exception : correctly transmitted, node still keeps spinning...
 
 
-### TESTING NODE CREATION / TERMINATION ###
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_termination():
+    """Checks that a node can be shutdown without being started and indicate that it never ran"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
     exitcode = n1.shutdown()  # shutdown should have no effect here (if not started, same as noop )
@@ -37,9 +36,9 @@ def test_node_termination():
     assert not n1.is_alive()
 
 
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_creation_termination():
+    """Checks that a node can be started and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
     n1.start()
@@ -49,9 +48,9 @@ def test_node_creation_termination():
     assert not n1.is_alive()
 
 
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
-@pytest.mark.timeout(500)
+@pytest.mark.timeout(5)
 def test_node_timeout_creation_termination():
+    """Checks that a node can be started with timeout and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
     started = n1.start(1)
@@ -65,11 +64,12 @@ def test_node_timeout_creation_termination():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_double_creation_termination():
+    """Checks that a node can be started twice and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
     n1.start()
     assert n1.is_alive()
-    n1.start()  # this shuts down and restart the node
+    n1.start()  # this shuts down properly and restart the node
     assert n1.is_alive()
 
     exitcode = n1.shutdown()
@@ -80,6 +80,7 @@ def test_node_double_creation_termination():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_timeout_double_creation_termination():
+    """Checks that a node can be started twice with timeout and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
     assert n1.start(1)
@@ -92,9 +93,9 @@ def test_node_timeout_double_creation_termination():
     assert not n1.is_alive()
 
 
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_creation_double_termination():
+    """Checks that a node can be started and shutdown twice and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
     n1.start()
@@ -107,10 +108,9 @@ def test_node_creation_double_termination():
     assert not n1.is_alive()
 
 
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_creation_args():
-
+    """Checks that a node can be passed an argument using inheritance"""
     ns = multiprocessing.Manager().Namespace()
     ns.arg = 42
 
@@ -130,10 +130,9 @@ def test_node_creation_args():
     assert ns.arg == 0
 
 
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_creation_args_delegate():
-
+    """Checks that a node can be passed an argument using delegation"""
     ns = multiprocessing.Manager().Namespace()
     ns.arg = 42
 
@@ -152,11 +151,9 @@ def test_node_creation_args_delegate():
     assert ns.arg == 0
 
 
-
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_creation_kwargs():
-
+    """Checks that a node can be passed a keyword argument using inheritance"""
     ns = multiprocessing.Manager().Namespace()
     ns.kwarg = 42
 
@@ -176,10 +173,9 @@ def test_node_creation_kwargs():
     assert ns.kwarg == 0
 
 
-# @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_creation_kwargs_delegate():
-
+    """Checks that a node can be passed a keyword argument using delegation"""
     ns = multiprocessing.Manager().Namespace()
     ns.kwarg = 42
 
@@ -201,6 +197,7 @@ def test_node_creation_kwargs_delegate():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_as_context_manager():
+    """Checks that a node can be used as a context manager"""
     with pyzmp.Node() as n1:  # this will __init__ and __enter__
         assert n1.is_alive()
     assert not n1.is_alive()
@@ -209,9 +206,11 @@ def test_node_as_context_manager():
 # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
 @pytest.mark.timeout(5)
 def test_node_running_as_context_manager():
+    """Checks that an already running node can be used as a context manager"""
     n1 = pyzmp.Node()
     n1.start()
     with n1:  # hooking to an already started node
+        # This might restart the node (good or bad ?)
         assert n1.is_alive()
     assert not n1.is_alive()
 
@@ -219,7 +218,6 @@ def test_node_running_as_context_manager():
 def test_update_rate():
     """
     Testing that the update methods get a correct timedelta
-    :return:
     """
     # TODO : investigate if node multiprocessing plugin would help simplify this
     # playing with list to pass a reference to this
