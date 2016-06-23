@@ -143,10 +143,13 @@ class Node(object):
             'name': name,
             'args': args or (),
             'kwargs': kwargs or {},
-            'target': self._noderun,
+            'target': self.run,  # Careful : our run() is not the same as the one for Process
         }
-        self._process = multiprocessing.Process(**self._pargs)
-        self._target = target or self.update
+        # Careful : our own target is not the same as the one for Process
+        self._target = target or self.update  # we expect the user to overload update in child class.
+
+        #: the actual process instance. lazy creation on start() call only.
+        self._process = None
 
         self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
         self.exit = multiprocessing.Event()
@@ -176,21 +179,28 @@ class Node(object):
 
     ### Process API delegation ###
     def is_alive(self):
-        return self._process.is_alive()
+        if self and self._process:
+            return self._process.is_alive()
 
     def join(self, timeout=None):
+        if not self._process:
+            # blocking on started event before blocking on join
+            self.started.wait(timeout=timeout)
         return self._process.join(timeout=timeout)
+
+
+
 
     @property
     def name(self):
-        if self._process:
+        if self and self._process:
             return self._process.name
         else:
             return self._pargs.get('name', "ZMPNode")
 
     @name.setter
     def name(self, name):
-        if self._process:
+        if self and self._process:
             self._process.name = name
             # only reset the name arg if it was accepted by the setter
             self._pargs.set('name', self._process.name)
@@ -260,6 +270,7 @@ class Node(object):
         """
         Start child process
         :param timeout: the maximum time to wait for child process to report it has actually started.
+        None waits until the update has been called at least once.
         """
 
         # we lazily create our process delegate (with same arguments)
@@ -283,12 +294,70 @@ class Node(object):
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
 
-    def _noderun(self, *args, **kwargs):
-        # TODO : make use of the arguments since run is now the target...
+
+    def terminate(self):
+        return self._process.terminate()
+
+    ### Node specific API ###
+    # TODO : find a way to separate process management and service provider API
+
+    def provides(self, svc_callback, service_name=None):
+        service_name = service_name or svc_callback.__name__
+        # we store an endpoint ( bound method or unbound function )
+        self._providers[service_name] = Node.EndPoint(
+            self=getattr(svc_callback, '__self__', None),
+            func=getattr(svc_callback, '__func__', svc_callback),
+        )
+
+    def withholds(self, service_name):
+        service_name = getattr(service_name, '__name__', service_name)
+        # we store an endpoint ( bound method or unbound function )
+        self._providers.pop(service_name)
+
+    # TODO : shortcut to discover/build only services provided by this node ?
+
+    # Careful : this is NOT the same usage as "run()" from Process :
+    # it is called inside a loop that it does not directly control...
+    # TOOD : think about it and improve (Entity System integration ? Pool + Futures integration ?)
+    def update(self, *args, **kwargs):
+        """
+        Runs at every update cycle in the node process/thread.
+        Usually you want to override this method to extend the behavior of the node in your implementation
+        :return: integer as exitcode to stop the node, or None to keep looping...
+        """
+        # TODO : Check which way is better (can also be used to run external process, other functions, like Process)
+        return None  # we keep looping by default (need to deal with services here...)
+
+    def shutdown(self, join=True, timeout=None):
+        """
+        Clean shutdown of the node.
+        :param join: optionally wait for the process to end (default : True)
+        :return: None
+        """
+        if self.is_alive():  # check if process started
+            print("Shutdown initiated")
+            self.exit.set()
+            if join:
+                self.join(timeout=timeout)
+                # TODO : timeout before forcing terminate (SIGTERM)
+
+        exitcode = self._process.exitcode if self._process else None  # we return None if the process was never started
+        return exitcode
+
+    def run(self, *args, **kwargs):
+        """
+        The Node main method, running in a child process (similar to Process.run() but also accepts args)
+        A children class can override this method, but it needs to call super().run(*args, **kwargs)
+        for the node to start properly and call update() as expected.
+        :param args: arguments to pass to update()
+        :param kwargs: eyword arguments to pass to update()
+        :return: last exitcode returned by update()
+        """
+        # TODO : make use of the arguments ? since run is now the target for Process...
 
         exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
 
-        #print('Starting {node} [{pid}] => {address}'.format(node=self.name, pid=self.pid, address=self._svc_address))
+        print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
 
         zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
         # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
@@ -321,13 +390,13 @@ class Node(object):
                         if isinstance(req, ServiceRequest):
                             if req.service and req.service in self._providers.keys():
 
-                                args = pickle.loads(req.args) if req.args else ()
+                                request_args = pickle.loads(req.args) if req.args else ()
                                 # add 'self' if providers[req.service] is a bound method.
                                 if self._providers[req.service].self:
-                                    args = (self, ) + args
-                                kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
+                                    request_args = (self, ) + request_args
+                                request_kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
 
-                                resp = self._providers[req.service].func(*args, **kwargs)
+                                resp = self._providers[req.service].func(*request_args, **request_kwargs)
                                 svc_socket.send(ServiceResponse(
                                     service=req.service,
                                     response=pickle.dumps(resp),
@@ -356,12 +425,13 @@ class Node(object):
                         ).serialize())
 
                 # time is ticking
+                # TODO : move this out of here. this class should require only generic interface to update method.
                 now = time.time()
                 timedelta = now - start
                 start = now
 
-                # by default we keep spinning (still dealing with services and stuff here)
-                loop_again = True
+                if first_loop:
+                    logging.info("[{self.name}] Node started...".format(**locals()))
 
                 # replacing the original Process.run() call, passing arguments to our target
                 if self._target:
@@ -375,63 +445,21 @@ class Node(object):
                 if first_loop:
                     # signalling startup only at the end of the loop, only the first time
                     self.started.set()
-                    logging.info("[{self.name}] Node started...".format(**locals()))
 
                 if exitstatus is not None:
                     break
+
+            if self.started.is_set() and exitstatus is None and self.exit.is_set():
+                # in the not so special case where we started, we didnt get exit code and we exited,
+                # this is expected as a normal result and we set an exitcode here of 0
+                # As 0 is the conventional success for unix process successful run
+                exitstatus = 0
 
         logging.info("[{self.name}] Node stopped...".format(**locals()))
         return exitstatus  # returning last exit status from the update function
 
         # all context managers are destroyed properly here
 
-    def terminate(self):
-        return self._process.terminate()
 
-    ### Node specific API ###
 
-    def provides(self, svc_callback, service_name=None):
-        service_name = service_name or svc_callback.__name__
-        # we store an endpoint ( bound method or unbound function )
-        self._providers[service_name] = Node.EndPoint(
-                self=getattr(svc_callback, '__self__', None),
-                func=getattr(svc_callback, '__func__', svc_callback),
-        )
-
-    def withholds(self, service_name):
-        service_name = getattr(service_name, '__name__', service_name)
-        # we store an endpoint ( bound method or unbound function )
-        self._providers.pop(service_name)
-
-    # TODO : shortcut to discover/build only services provided by this node ?
-
-    # Note this is NOT the same usage as "run()" from Process :
-    # it is called inside a loop that it does not directly control...
-    # TOOD : think about it and improve (Entity System integration ? Pool + Futures integration ?)
-    def update(self, *args, **kwargs):
-        """
-        Runs at every update cycle in the node process/thread.
-        Usually you want to override this method to extend the behavior of the node in your implementation
-        :return: integer as exitcode to stop the node, or None to keep looping...
-        """
-        # TODO : Check which way is better (can also be used to run external process, other functions, like Process)
-        return None  # we keep looping by default (need to deal with services here...)
-
-    def shutdown(self, join=True, timeout=None):
-        """
-        Clean shutdown of the node.
-        :param join: optionally wait for the process to end (default : True)
-        :return: None
-        """
-        if self.is_alive():  # check if process started
-            print("Shutdown initiated")
-            self.exit.set()
-            if join:
-                self.join(timeout=timeout)
-                # TODO : after terminate, not before
-                # self._popen = None  # this should permit start to run again
-            # TODO : timeout before forcing terminate (SIGTERM)
-
-        exitcode = self._process.exitcode
-        return exitcode
 
