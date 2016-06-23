@@ -11,8 +11,8 @@ PyZMP
    :target: https://landscape.io/github/asmodehn/pyzmp/master
    :alt: Code Health
 
-.. image:: https://www.quantifiedcode.com/api/v1/project/68d207b248dd4b3f89cf48e5de89c461/badge.svg
-  :target: https://www.quantifiedcode.com/app/project/68d207b248dd4b3f89cf48e5de89c461
+.. image:: https://www.quantifiedcode.com/api/v1/project/6e2a3dc5e5b142e9b7db86d0dcf1be3c/badge.svg
+  :target: https://www.quantifiedcode.com/app/project/6e2a3dc5e5b142e9b7db86d0dcf1be3c
   :alt: Code issues
 
 PyZMP is a multiprocess library based on ZeroMQ.
