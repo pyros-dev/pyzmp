@@ -84,6 +84,9 @@ Run all tests (with all possible configurations) with tox
 tox
 ```
 
+Note : Tox envs are recreated every time to ensure consistency.
+So it s better to develop while in a non-tox-managed venv.
+
 Roadmap
 -------
 
