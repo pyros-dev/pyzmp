@@ -48,10 +48,38 @@ How to use
 
 Install
 ```
-python setup.py develop
+pip install pyzmp
 ```
 
-Run tests with tox
+Run self tests
+```
+pyzmp
+```
+
+How to develop
+--------------
+
+Clone this repository
+```
+git clone http://github.com/asmodehn/pyzmp
+```
+
+Create you virtualenv to workon using virtualenvwrapper
+```
+mkvirtualenv pyzmpenv
+```
+
+Install all dependencies via dev-requirements
+```
+pip install -r dev-requirements.txt
+```
+
+Run self tests
+```
+pyzmp
+```
+
+Run all tests (with all possible configurations) with tox
 ```
 tox
 ```

@@ -14,19 +14,23 @@ setup(name='pyzmp',
         'pyzmp',
         'pyzmp.tests'
     ],
+    entry_points={
+        'console_scripts': [
+            'pyzmp = pyzmp.__main__'
+        ]
+    },
     # this is better than using package data ( since behavior is a bit different from distutils... )
     include_package_data=True,  # use MANIFEST.in during install.
     install_requires=[
         'tblib',  # this might not always install six (latest version does not)
         'six',
         'pyzmq',
-        # since tests are embedded in package
         'pytest-timeout',
         # Careful : upon install plugins can be resolved instead of core pytest package
         # => pytest should be listed last here...
-        'pytest',
+        'pytest>=2.9.1',  # since tests are embedded in package
     ],
     setup_requires=['pytest-runner'],
-    tests_require=['pytest'],
+    tests_require=['pytest>=2.9.1'],
     zip_safe=False,  # TODO testing...
 )

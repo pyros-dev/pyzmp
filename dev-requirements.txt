@@ -1,7 +1,7 @@
 --index-url https://pypi.python.org/simple/
 --extra-index-url https://testpypi.python.org/simple/
 
-pytest>=2.9.1
+#We need this to get tox to work properly.
 tox>=2.3.1
 
 -e .
