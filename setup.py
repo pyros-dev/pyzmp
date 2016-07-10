@@ -16,7 +16,7 @@ setup(name='pyzmp',
     ],
     entry_points={
         'console_scripts': [
-            'pyzmp = pyzmp.__main__'
+            'pyzmp = pyzmp.__main__:main'
         ]
     },
     # this is better than using package data ( since behavior is a bit different from distutils... )
