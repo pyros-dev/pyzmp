@@ -55,7 +55,10 @@ So here we have a very basic example of a communication between different proces
 TODO : example using delegation
 
 A current limitation however is that discover currently works out of the box only from the same python interpreter.
-Later version will provide an API to make this between two different interpreters, trivial.
+As a result we have to rely on a process manager running in the same interpreter.
+
+A later version will provide an API to make this, between two different interpreters, trivial, so that process management can be done somewhere else.
+
 
 
 
