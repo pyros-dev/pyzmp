@@ -12,6 +12,7 @@ Contents:
    :maxdepth: 4
 
    readme_link
+   tutorial
    pyzmp
    changelog_link
 
