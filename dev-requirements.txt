@@ -3,6 +3,7 @@
 
 #We need this to get tox to work properly.
 tox>=2.3.1
+twine
 
 -e .
 
