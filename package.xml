@@ -4,7 +4,7 @@
    This file is mostly here to provide ros dependencies when this project is built with catkin
    -->
   <name>pyzmp</name>
-  <version>0.0.9</version>
+  <version>0.0.11</version>
   <description>
   Python Multiprocess Management Framework, based on ZeroMQ communication
   </description>
