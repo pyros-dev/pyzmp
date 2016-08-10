@@ -20,6 +20,10 @@
   <buildtool_depend version_gte="0.6.18">catkin</buildtool_depend>
   <build_depend version_gte="0.1.9">catkin_pip</build_depend>
 
+  <depend>python-zmq</depend>
+
+  <test_depend>python-pytest</test_depend>
+
   <export>
     <rosdoc config="rosdoc.yaml" />
   </export>
