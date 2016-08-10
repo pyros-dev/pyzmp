@@ -1,6 +1,16 @@
 Changelog
 =========
 
+0.0.13 (2016-08-10)
+-------------------
+
+- Retrieving changes from indigo-devel, because it s building now and
+  ready to be offloaded to release repo as patches. [alexv]
+
+- Improved setup.py. now relying on twine for release. [alexv]
+
+- Preparing version 0.0.12. [alexv]
+
 0.0.12 (2016-08-09)
 -------------------
 
