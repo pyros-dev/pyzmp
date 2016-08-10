@@ -1,8 +1,37 @@
 Changelog
 =========
 
+0.0.14 (2016-08-10)
+-------------------
+
+- Removing release shell script. now done from setup.py. [alexv]
+
+- Removing package.xml. doing thirdparty release from release repo now.
+  [alexv]
+
+- Moving docs to doc. [alexv]
+
+- Merge branch 'docs' of https://github.com/asmodehn/pyzmp. [alexv]
+
+  Conflicts:
+    CHANGELOG.rst
+
+- Added doc-requirements. [AlexV]
+
+- Added tutorial and example changelog generated with gitchangelog.
+  [AlexV]
+
+- More docs about process managers... [AlexV]
+
+- Added very basic rpc tutorial. [AlexV]
+
+- First doc version generated with sphinx-apidoc. added CHANGELOG.
+  [AlexV]
+
 0.0.13 (2016-08-10)
 -------------------
+
+- Preparing 0.0.13. [alexv]
 
 - Retrieving changes from indigo-devel, because it s building now and
   ready to be offloaded to release repo as patches. [alexv]
@@ -464,8 +493,8 @@ Changelog
   mp_exception. [alexv]
 
   Conflicts:
-  	setup.py
-  	src/rostful_node/rostful_node_process.py
+    setup.py
+    src/rostful_node/rostful_node_process.py
 
 - Changing ros package name after repository rename. [alexv]
 
@@ -678,7 +707,7 @@ Changelog
 - Merge branch 'indigo-devel' into wildcards. [Michal Staniaszek]
 
   Conflicts:
-  	src/rostful_node/ros_interface.py
+    src/rostful_node/ros_interface.py
 
 - Merge pull request #23 from asmodehn/waiting-fix. [AlexV]
 
