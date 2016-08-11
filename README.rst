@@ -15,6 +15,11 @@ PyZMP
   :target: https://www.quantifiedcode.com/app/project/6e2a3dc5e5b142e9b7db86d0dcf1be3c
   :alt: Code issues
 
+ROS release :
+
+.. image:: https://travis-ci.org/asmodehn/pyzmp-rosrelease.svg?branch=master
+    :target: https://travis-ci.org/asmodehn/pyzmp-rosrelease
+
 PyZMP is a multiprocess library based on ZeroMQ.
 
 The aim is to make experimenting with multiprocess and distributed architecture more solid and overall easier.
