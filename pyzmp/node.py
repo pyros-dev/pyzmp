@@ -430,9 +430,6 @@ class Node(object):
                 timedelta = now - start
                 start = now
 
-                if first_loop:
-                    logging.info("[{self.name}] Node started...".format(**locals()))
-
                 # replacing the original Process.run() call, passing arguments to our target
                 if self._target:
                     # bwcompat
@@ -440,11 +437,14 @@ class Node(object):
 
                     # TODO : use return code to determine when/how we need to run this the next time...
                     # Also we need to keep the exit status to be able to call external process as an update...
+
+                    logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
                     exitstatus = self._target(*args, **kwargs)
 
                 if first_loop:
                     # signalling startup only at the end of the loop, only the first time
                     self.started.set()
+                    first_loop = False
 
                 if exitstatus is not None:
                     break
@@ -455,7 +455,7 @@ class Node(object):
                 # As 0 is the conventional success for unix process successful run
                 exitstatus = 0
 
-        logging.info("[{self.name}] Node stopped...".format(**locals()))
+        logging.debug("[{self.name}] Node stopped.".format(**locals()))
         return exitstatus  # returning last exit status from the update function
 
         # all context managers are destroyed properly here

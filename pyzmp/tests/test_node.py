@@ -242,8 +242,6 @@ def test_update_rate():
             if randint(0, 10000) == 42:
                 break
 
-
-
     # hack to dynamically change the update method
     testing_update_onearg = functools.partial(testing_update,
                                         last_update=testing_last_update,
@@ -257,9 +255,10 @@ def test_update_rate():
 
     # Starting the node in the same thread, to be able to test simply by shared memory.
     # TODO : A Node that can choose process or thread run ( on start() instead of init() maybe ? )
-    runthread = threading.Thread(target=n1.update)
+    runthread = threading.Thread(target=n1.run)
     runthread.daemon = True  # to kill this when test is finished
     runthread.start()
+    # n1.start()
 
     # sleep here for a while
     time.sleep(10)
