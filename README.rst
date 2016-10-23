@@ -108,6 +108,13 @@ tox
 Note : Tox envs are recreated every time to ensure consistency.
 So it s better to develop while in a non-tox-managed venv.
 
+
+Tutorials and examples
+----------------------
+A good example showing use of pyzmp, `simple RPC client/server example <http://pyzmp.readthedocs.io/en/latest/tutorial.html#simple-rpc-client-server-example>`_
+
+tutorials implementing `multi node communication <https://github.com/dhirajdhule/pyzmp_tutorials>`_ (under development)
+
 Roadmap
 -------
 
