@@ -32,6 +32,11 @@ try:
 except ImportError:
     Traceback = None
 
+try:
+    import setproctitle
+except ImportError:
+    setproctitle = None
+
 ### IMPORTANT : COMPOSITION -> A SET OF NODE SHOULD ALSO 'BE' A NODE ###
 ### IMPORTANT : IDENTITY
 ### Category Theory https://en.wikipedia.org/wiki/Category_theory
@@ -356,6 +361,9 @@ class Node(object):
         # TODO : make use of the arguments ? since run is now the target for Process...
 
         exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
+
+        if setproctitle:
+            setproctitle.setproctitle("{0}_pyzmp_node".format(self.name))
 
         print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
 
