@@ -17,7 +17,7 @@ PyZMP
 
 ROS release :
 
-.. image:: https://travis-ci.org/asmodehn/pyzmp-rosrelease.svg?branch=master
+.. image:: https://travis-ci.org/asmodehn/pyzmp-rosrelease.svg?branch=upstream
     :target: https://travis-ci.org/asmodehn/pyzmp-rosrelease
 
 PyZMP is a multiprocess library based on ZeroMQ.
