@@ -1,11 +1,9 @@
-import fileinput
-import git
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import yaml
+import importlib
 
 import setuptools
 
@@ -87,6 +85,7 @@ class PublishCommand(setuptools.Command):
 # Clean way to add a custom "python setup.py <command>"
 # Ref setup.py command extension : https://blog.niteoweb.com/setuptools-run-custom-code-in-setup-py/
 class RosDevelopCommand(setuptools.Command):
+
     """Command to mutate this package to a ROS package, using its ROS release repository"""
     description = "mutate this package ot a ROS package"
     user_options = []
@@ -101,6 +100,10 @@ class RosDevelopCommand(setuptools.Command):
         pass
 
     def run(self):
+        # dynamic import for this command only to not need these in usual python case...
+        import git
+        import yaml
+
         """runner"""
         repo_path = tempfile.mkdtemp(prefix='rosdevelop-' + os.path.dirname(__file__))  # TODO get actual package name ?
         print("Getting ROS release repo in {0}...".format(repo_path))
