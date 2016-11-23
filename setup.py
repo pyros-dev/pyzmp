@@ -87,7 +87,7 @@ class PublishCommand(setuptools.Command):
 class RosDevelopCommand(setuptools.Command):
 
     """Command to mutate this package to a ROS package, using its ROS release repository"""
-    description = "mutate this package ot a ROS package"
+    description = "mutate this package to a ROS package, using its ROS release repository"
     user_options = []
 
     def initialize_options(self):
