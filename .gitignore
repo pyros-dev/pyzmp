@@ -5,3 +5,7 @@ dist
 build
 .idea
 .tox
+travis_checks.sh
+rosdoc.yaml
+CMakeLists.txt
+package.xml
