@@ -5,5 +5,9 @@
 tox>=2.3.1
 twine==1.8.1
 
+#Used by setup.py rosdevelop
+gitpython>=2.1.0
+pyyaml>=3.12
+
 -e .
 
