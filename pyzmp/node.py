@@ -32,6 +32,11 @@ try:
 except ImportError:
     Traceback = None
 
+try:
+    import setproctitle
+except ImportError:
+    setproctitle = None
+
 ### IMPORTANT : COMPOSITION -> A SET OF NODE SHOULD ALSO 'BE' A NODE ###
 ### IMPORTANT : IDENTITY
 ### Category Theory https://en.wikipedia.org/wiki/Category_theory
@@ -129,7 +134,7 @@ class Node(object):
     EndPoint = namedtuple("EndPoint", "self func")
 
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
-    def __init__(self, name='node', socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
+    def __init__(self, name='pyzmp_node', socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
         """
         Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
         :param name: Name of the node
@@ -150,6 +155,10 @@ class Node(object):
 
         #: the actual process instance. lazy creation on start() call only.
         self._process = None
+
+        #: whether or not the node name should be set as the actual process title
+        #: replacing the string duplicated from the python interpreter run
+        self.new_title = True
 
         self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
         self.exit = multiprocessing.Event()
@@ -187,9 +196,6 @@ class Node(object):
             # blocking on started event before blocking on join
             self.started.wait(timeout=timeout)
         return self._process.join(timeout=timeout)
-
-
-
 
     @property
     def name(self):
@@ -304,9 +310,10 @@ class Node(object):
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
 
-
     def terminate(self):
+        """Forcefully terminates the underlying process (using SIGTERM)"""
         return self._process.terminate()
+        # TODO : maybe redirect to shutdown here to avoid child process leaks ?
 
     ### Node specific API ###
     # TODO : find a way to separate process management and service provider API
@@ -360,12 +367,15 @@ class Node(object):
         A children class can override this method, but it needs to call super().run(*args, **kwargs)
         for the node to start properly and call update() as expected.
         :param args: arguments to pass to update()
-        :param kwargs: eyword arguments to pass to update()
+        :param kwargs: keyword arguments to pass to update()
         :return: last exitcode returned by update()
         """
         # TODO : make use of the arguments ? since run is now the target for Process...
 
         exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
+
+        if setproctitle and self.new_title:
+            setproctitle.setproctitle("{0}".format(self.name))
 
         print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
 

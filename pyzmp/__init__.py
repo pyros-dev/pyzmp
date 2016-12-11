@@ -32,6 +32,10 @@ topics = manager.list()
 params = manager.list()
 
 
+from .helpers import process_watcher
+from .helpers import process_watcher_cm
+
+
 __all__ = [
     'UnknownServiceException', 'UnknownRequestTypeException', 'UnknownResponseTypeException',
     'Node', 'nodes', 'current_node',
