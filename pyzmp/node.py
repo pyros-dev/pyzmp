@@ -235,7 +235,7 @@ class Node(object):
         if self._process:
             self._process.daemonic = daemonic
         else:
-            self._pargs['daemonic']= daemonic
+            self._pargs['daemonic'] = daemonic
 
     @property
     def authkey(self):
@@ -280,7 +280,17 @@ class Node(object):
         """
 
         # we lazily create our process delegate (with same arguments)
-        self._process = multiprocessing.Process(**self._pargs)
+        if self.daemon:
+            daemonic = True
+        else:
+            daemonic = False
+
+        pargs = self._pargs.copy()
+        pargs.pop('daemonic', None)
+
+        self._process = multiprocessing.Process(**pargs)
+
+        self._process.daemon = daemonic
 
         if self.is_alive():
             # if already started, we shutdown and join before restarting
