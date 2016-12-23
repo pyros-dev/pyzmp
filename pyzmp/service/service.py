@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
-import contextlib
-import six
-import time
-from collections import namedtuple
-import zmq
 import pickle
+import time
+
+import zmq
 #import dill as pickle
-import inspect
 
 try:
     from six import reraise
@@ -20,34 +17,10 @@ try:
 except ImportError:  # if tblib is not present, we will not be able to forward the traceback
     Traceback = None
 
-from .message import ServiceRequest, ServiceResponse, ServiceResponse_dictparse, ServiceException, ServiceException_dictparse
+from pyzmp.message import ServiceRequest, ServiceResponse_dictparse
 
-from .master import manager
-from .exceptions import UnknownResponseTypeException
-
-# Lock is definitely needed ( not implemented in proxy objects, unless the object itself already has it, like Queue )
-services_lock = manager.Lock()
-services = manager.dict()
-
-
-@contextlib.contextmanager
-def service_provider_cm(node_name, svc_address, node_providers):
-    # advertising services
-    services_lock.acquire()
-    for svc_name, svc_endpoint in six.iteritems(node_providers):
-        # print('-> Providing {0} with {1}'.format(svc_name, svc_endpoint))
-        # needs reassigning to propagate update to manager
-        services[svc_name] = (services[svc_name] if svc_name in services else []) + [(node_name, svc_address)]
-    services_lock.release()
-
-    yield
-
-    # concealing services
-    services_lock.acquire()
-    for svc_name, svc_endpoint in six.iteritems(node_providers):
-        # print('-> Unproviding {0}'.format(svc_name))
-        services[svc_name] = [(n, a) for (n, a) in services[svc_name] if n != node_name]
-    services_lock.release()
+from pyzmp.exceptions import UnknownResponseTypeException
+from pyzmp.service.provider.proactor import services
 
 
 class ServiceCallTimeout(Exception):

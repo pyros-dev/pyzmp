@@ -4,6 +4,7 @@ from __future__ import absolute_import
 # To allow python to run these tests as main script
 import functools
 import multiprocessing
+import subprocess
 import sys
 import os
 import threading
@@ -152,6 +153,24 @@ def test_node_creation_args_delegate():
 
 
 @pytest.mark.timeout(5)
+def test_node_creation_args_shell():
+    """Checks that a node can run a shell command"""
+    ns = multiprocessing.Manager().Namespace()
+
+    def shell_run(**kwargs):  # kwargs is there to accept extra arguments nicely (timedelta)
+        subprocess.check_call("sleep 10", shell=True)  # this will block for a little while (in a subprocess/node)
+
+    n1 = pyzmp.Node(target=shell_run)
+    n1.daemon = True  # this should make the node able to shutdown any child (even blocking ones)
+    assert not n1.is_alive()
+    n1.start()
+    assert n1.is_alive()
+    exitcode = n1.shutdown()
+    assert exitcode == 0
+    assert not n1.is_alive()
+
+
+@pytest.mark.timeout(5)
 def test_node_creation_kwargs():
     """Checks that a node can be passed a keyword argument using inheritance"""
     ns = multiprocessing.Manager().Namespace()
@@ -279,9 +298,38 @@ def test_update_rate():
 
 
 
+
+@pytest.mark.timeout(5)
+def test_node_tree():
+        """Checks that a node can spawn other node, and that node management role can be passed around..."""
+
+        def sub_sleep(**kwargs):
+            time.sleep(10)
+            return 42
+
+        def source_sub(**kwargs):
+            sub = pyzmp.Node(target=sub_sleep)
+            sub.start()
+            return sub
+
+        def sink_sub(sub, **kwargs):
+            sub.shutdown()
+
+        n1 = pyzmp.Node(target=source_sub)
+        assert not n1.is_alive()
+        n1.start()
+        assert n1.is_alive()
+
+        n2 = n1.shutdown()
+        assert n2.is_alive()
+
+        n3 = pyzmp.Node(target=source_sub, args=(n2,))
+        assert not n3.is_alive()
+        n3.start()
+        assert n3.is_alive()
+
+        n3.shutdown()
+
+        assert not n2.is_alive()
+
 ### TODO : more testing in case of crash in process, exception, signal, etc.
-
-if __name__ == '__main__':
-
-    import nose
-    nose.runmodule()

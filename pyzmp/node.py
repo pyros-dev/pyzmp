@@ -5,21 +5,14 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import sys
-import tempfile
-import multiprocessing, multiprocessing.reduction
-import types
-import zmq
-import socket
-import logging
-import pickle
 import contextlib
+import multiprocessing
+import multiprocessing.reduction
+import tempfile
+
 #import dill as pickle
 
 # allowing pickling of exceptions to transfer it
-from collections import namedtuple
-
-import time
 
 try:
     from tblib.decorators import Traceback
@@ -95,10 +88,7 @@ except ImportError:
 # node3 <--topic_cb-- node2 <--topic_cb-- node1
 
 from .master import manager
-from .exceptions import UnknownServiceException, UnknownRequestTypeException
-from .message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
-from .service import service_provider_cm
-#from .service import RequestMsg, ResponseMsg, ErrorMsg  # only to access message types
+from pyzmp.service.provider.proactor import Provider
 
 current_node = multiprocessing.current_process
 
@@ -131,8 +121,6 @@ def node_cm(node_name, svc_address):
 # CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
 class Node(object):
 
-    EndPoint = namedtuple("EndPoint", "self func")
-
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
     def __init__(self, name='pyzmp_node', socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
         """
@@ -164,10 +152,10 @@ class Node(object):
         self.exit = multiprocessing.Event()
         self.started = multiprocessing.Event()
         self.listeners = {}
-        self._providers = {}
-        self.tmpdir = tempfile.mkdtemp(prefix='zmp-' + self.name + '-')
+        self.tmpdir = tempfile.mkdtemp(prefix='zmp-' + name + '-')
         # if no socket is specified the services of this node will be available only through IPC
         self._svc_address = socket_bind if socket_bind else 'ipc://' + self.tmpdir + '/services.pipe'
+        self._provider = Provider(name, self._svc_address)
 
     def __enter__(self):
         # __enter__ is called only if we pass this instance to with statement ( after __init__ )
@@ -319,23 +307,16 @@ class Node(object):
     # TODO : find a way to separate process management and service provider API
 
     def provides(self, svc_callback, service_name=None):
-        service_name = service_name or svc_callback.__name__
-        # we store an endpoint ( bound method or unbound function )
-        self._providers[service_name] = Node.EndPoint(
-            self=getattr(svc_callback, '__self__', None),
-            func=getattr(svc_callback, '__func__', svc_callback),
-        )
+        self._provider.provides(svc_callback=svc_callback, inst=self, service_name=service_name)
 
     def withholds(self, service_name):
-        service_name = getattr(service_name, '__name__', service_name)
-        # we store an endpoint ( bound method or unbound function )
-        self._providers.pop(service_name)
+        self._provider.withholds(service_name=service_name)
 
     # TODO : shortcut to discover/build only services provided by this node ?
 
     # Careful : this is NOT the same usage as "run()" from Process :
     # it is called inside a loop that it does not directly control...
-    # TOOD : think about it and improve (Entity System integration ? Pool + Futures integration ?)
+    # TODO : think about it and improve (Pool + Futures integration)
     def update(self, *args, **kwargs):
         """
         Runs at every update cycle in the node process/thread.
@@ -377,108 +358,95 @@ class Node(object):
         if setproctitle and self.new_title:
             setproctitle.setproctitle("{0}".format(self.name))
 
-        print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
-
-        zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
-        # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
-        zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
-        svc_socket = zcontext.socket(zmq.REP)  # Ref : http://api.zeromq.org/2-1:zmq-socket # TODO : ROUTER instead ?
-        svc_socket.bind(self._svc_address,)
-
-        poller = zmq.Poller()
-        poller.register(svc_socket, zmq.POLLIN)
-
         # Initializing all context managers
-        with service_provider_cm(
-                    self.name, self._svc_address, self._providers
-                ), node_cm(self.name, self._svc_address), self.context_manager() as cm:
+        with node_cm(self.name, self._svc_address), self.context_manager() as cm:
+            print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
 
-            # Starting the clock
-            start = time.time()
+            self._provider.eventloop_until(self._svc_address, self.exit, *args, **kwargs)
 
-            first_loop = True
-            # loop listening to connection
-            while not self.exit.is_set():
-
-                # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
-                socks = dict(poller.poll(timeout=100))
-                if svc_socket in socks and socks[svc_socket] == zmq.POLLIN:
-                    req = None
-                    try:
-                        req_unparsed = svc_socket.recv()
-                        req = ServiceRequest_dictparse(req_unparsed)
-                        if isinstance(req, ServiceRequest):
-                            if req.service and req.service in self._providers.keys():
-
-                                request_args = pickle.loads(req.args) if req.args else ()
-                                # add 'self' if providers[req.service] is a bound method.
-                                if self._providers[req.service].self:
-                                    request_args = (self, ) + request_args
-                                request_kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
-
-                                resp = self._providers[req.service].func(*request_args, **request_kwargs)
-                                svc_socket.send(ServiceResponse(
-                                    service=req.service,
-                                    response=pickle.dumps(resp),
-                                ).serialize())
-
-                            else:
-                                raise UnknownServiceException("Unknown Service {0}".format(req.service))
-                        else:  # should not happen : dictparse would fail before reaching here...
-                            raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
-                    except Exception:  # we transmit back all errors, and keep spinning...
-                        exctype, excvalue, tb = sys.exc_info()
-                        # trying to make a pickleable traceback
-                        try:
-                            ftb = Traceback(tb)
-                        except TypeError as exc:
-                            ftb = "Traceback manipulation error: {exc}. Verify that python-tblib is installed.".format(exc=exc)
-
-                        # sending back that exception with traceback
-                        svc_socket.send(ServiceResponse(
-                            service=req.service,
-                            exception=ServiceException(
-                                exc_type=pickle.dumps(exctype),
-                                exc_value=pickle.dumps(excvalue),
-                                traceback=pickle.dumps(ftb),
-                            )
-                        ).serialize())
-
-                # time is ticking
-                # TODO : move this out of here. this class should require only generic interface to update method.
-                now = time.time()
-                timedelta = now - start
-                start = now
-
-                # replacing the original Process.run() call, passing arguments to our target
-                if self._target:
-                    # bwcompat
-                    kwargs['timedelta'] = timedelta
-
-                    # TODO : use return code to determine when/how we need to run this the next time...
-                    # Also we need to keep the exit status to be able to call external process as an update...
-
-                    logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
-                    exitstatus = self._target(*args, **kwargs)
-
-                if first_loop:
-                    # signalling startup only at the end of the loop, only the first time
-                    self.started.set()
-                    first_loop = False
-
-                if exitstatus is not None:
-                    break
-
-            if self.started.is_set() and exitstatus is None and self.exit.is_set():
-                # in the not so special case where we started, we didnt get exit code and we exited,
-                # this is expected as a normal result and we set an exitcode here of 0
-                # As 0 is the conventional success for unix process successful run
-                exitstatus = 0
-
-        logging.debug("[{self.name}] Node stopped.".format(**locals()))
-        return exitstatus  # returning last exit status from the update function
-
-        # all context managers are destroyed properly here
+        # zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
+        # # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
+        # zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
+        # svc_socket = zcontext.socket(zmq.REP)  # Ref : http://api.zeromq.org/2-1:zmq-socket # TODO : ROUTER instead ?
+        # svc_socket.bind(self._svc_address,)
+        #
+        # poller = zmq.Poller()
+        # poller.register(svc_socket, zmq.POLLIN)
+        #
+        # # Initializing all context managers
+        # with self._provider.activate(), node_cm(self.name, self._svc_address), self.context_manager() as cm:
+        #
+        #     # Starting the clock
+        #     start = time.time()
+        #
+        #     first_loop = True
+        #     # loop listening to connection
+        #     while not self.exit.is_set():
+        #
+        #         # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
+        #         socks = dict(poller.poll(timeout=100))
+        #         if svc_socket in socks and socks[svc_socket] == zmq.POLLIN:
+        #             req = None
+        #             try:
+        #                 req_unparsed = svc_socket.recv()
+        #                 req = ServiceRequest_dictparse(req_unparsed)
+        #                 if isinstance(req, ServiceRequest):
+        #                     self._provider.dispatch_and_reply(req=req, svc_socket=svc_socket)
+        #                 else:  # should not happen : dictparse would fail before reaching here...
+        #                     raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
+        #             except Exception:  # we transmit back all errors, and keep spinning...
+        #                 exctype, excvalue, tb = sys.exc_info()
+        #                 # trying to make a pickleable traceback
+        #                 try:
+        #                     ftb = Traceback(tb)
+        #                 except TypeError as exc:
+        #                     ftb = "Traceback manipulation error: {exc}. Verify that python-tblib is installed.".format(exc=exc)
+        #
+        #                 # sending back that exception with traceback
+        #                 svc_socket.send(ServiceResponse(
+        #                     service=req.service,
+        #                     exception=ServiceException(
+        #                         exc_type=pickle.dumps(exctype),
+        #                         exc_value=pickle.dumps(excvalue),
+        #                         traceback=pickle.dumps(ftb),
+        #                     )
+        #                 ).serialize())
+        #
+        #         # time is ticking
+        #         # TODO : move this out of here. this class should require only generic interface to update method.
+        #         now = time.time()
+        #         timedelta = now - start
+        #         start = now
+        #
+        #         # replacing the original Process.run() call, passing arguments to our target
+        #         if self._target:
+        #             # bwcompat
+        #             kwargs['timedelta'] = timedelta
+        #
+        #             # TODO : use return code to determine when/how we need to run this the next time...
+        #             # Also we need to keep the exit status to be able to call external process as an update...
+        #
+        #             logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
+        #             exitstatus = self._target(*args, **kwargs)
+        #
+        #         if first_loop:
+        #             # signalling startup only at the end of the loop, only the first time
+        #             self.started.set()
+        #             first_loop = False
+        #
+        #         if exitstatus is not None:
+        #             break
+        #
+        #     if self.started.is_set() and exitstatus is None and self.exit.is_set():
+        #         # in the not so special case where we started, we didnt get exit code and we exited,
+        #         # this is expected as a normal result and we set an exitcode here of 0
+        #         # As 0 is the conventional success for unix process successful run
+        #         exitstatus = 0
+        #
+        # logging.debug("[{self.name}] Node stopped.".format(**locals()))
+        # return exitstatus  # returning last exit status from the update function
+        #
+        # # all context managers are destroyed properly here
 
 
 

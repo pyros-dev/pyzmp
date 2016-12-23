@@ -18,6 +18,8 @@
 # Lots of explicit details are needed in implementation ( frequency of publishing, paramters of requests, variation of data/response, etc.)
 # Estimating/simulating all that is not trivial, but that's very likely the gist of the "learning" behavior of neuronal networks.
 
+# Ref : https://www.youtube.com/watch?v=sTSQlYX5DU0 Reactive programming : future and observable (to mix with actor-based environment)
+
 # In pyros, the point of it is to be able to fully tests the multiprocess behavior,
 #     in pure python, without having to run a ROS system.
 from __future__ import absolute_import
