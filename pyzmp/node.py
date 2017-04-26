@@ -353,6 +353,8 @@ class Node(object):
         """
         # TODO : make use of the arguments ? since run is now the target for Process...
 
+        # TODO : retrieve process configuration (pargs) from here if possible to use as default for this method args/kwargs...
+
         exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
 
         if setproctitle and self.new_title:
