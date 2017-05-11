@@ -14,10 +14,12 @@ import time
 import sys
 import random
 import pytest
-from multiprocessing import Process, Event, Condition, Lock
+import multiprocessing
+import socket
+import six
 
 
-from pyzmp.service.provider.selector.zmq_poller import zmq_poller
+from pyzmp.service.provider.selectors.zmq_poller import zmq_poller
 
 
 # def find_free_port_number():
@@ -94,7 +96,6 @@ def fuzz():
 #         else:
 #             print("Unexpected event on socket_sub")
 
-
 def test_push_pull_tcp():
 
     def client(port, evt):
@@ -107,13 +108,17 @@ def test_push_pull_tcp():
         # send only 5 messages and dies
         for reqnum in range(5):
             print("pushing msg {0}".format(reqnum))
-            socket_push.send("msg {0}".format(reqnum))
+            try:
+                socket_push.send(b"msg %c" % reqnum)
+            except Exception as e:
+                raise e
             fuzz()
 
-    start_evt = Event()
-    Process(target=client, args=("5558", start_evt)).start()
+    start_evt = multiprocessing.Event()
+    multiprocessing.Process(target=client, args=("5558", start_evt)).start()
 
     context = zmq.Context()
+    context.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
     socket_pull = context.socket(zmq.PULL)
     socket_pull.bind("tcp://127.0.0.1:{0}".format("5558"))
     print("Running consumer on port: {0}".format("5558"))
@@ -133,87 +138,99 @@ def test_push_pull_tcp():
             print("pulling {0}".format(msg))
             reqnum += 1
 
-
+@pytest.mark.skip
 def test_pull_push_tcp():  # "symmetric" regarding bind/connect with "same" push/pull (contravariant ?)
 
     def client(port, evt):
-        context = zmq.Context()
-        socket_pull = context.socket(zmq.PULL)
-        socket_pull.connect("tcp://localhost:{0}".format(port))
-        print("Connected to producer with port {0}".format(port))
+        with zmq.Context() as context:
+            socket_pull = context.socket(zmq.PULL)
+            socket_pull.connect("tcp://localhost:{0}".format(port))
+            print("Connected to producer with port {0}".format(port))
 
-        # Initialize poll set
-        poller = zmq_poller()
-        poller.register(socket_pull, zmq.POLLIN)
+            # Initialize poll set
+            poller = zmq_poller()
+            poller.register(socket_pull, zmq.POLLIN)
 
-        # Work on requests from client
-        reqnum = 0
+            # Work on requests from client
+            reqnum = 0
 
-        evt.set()  # signal we are ready to start consuming client requests
-        while reqnum < 5:
-            socks = dict(poller.poll())
-            if socket_pull in socks and socks[socket_pull] == zmq.POLLIN:
-                msg = socket_pull.recv()  # getting (and ignoring) request data
-                print("pulling {0}".format(msg))
-                reqnum += 1
+            evt.set()  # signal we are ready to start consuming client requests
+            while reqnum < 5:
+                socks = dict(poller.poll())
+                if socket_pull in socks and socks[socket_pull] == zmq.POLLIN:
+                    msg = socket_pull.recv()  # getting (and ignoring) request data
+                    print("pulling {0}".format(msg))
+                    reqnum += 1
 
-    start_evt = Event()
-    Process(target=client, args=("5558", start_evt)).start()
+    start_evt = multiprocessing.Event()
+    multiprocessing.Process(target=client, args=("5558", start_evt)).start()
 
-    context = zmq.Context()
-    socket_push = context.socket(zmq.PUSH)
-    socket_push.bind("tcp://127.0.0.1:{0}".format("5558"))
-    print("Running producer on port: {0}".format("5558"))
+    with zmq.Context() as context:
+        context.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
+        socket_push = context.socket(zmq.PUSH)
+        socket_push.bind("tcp://127.0.0.1:{0}".format("5558"))
+        print("Running producer on port: {0}".format("5558"))
 
-    start_evt.wait()  # wait until we are ready to receive...
-    # send only 5 messages and dies
-    for reqnum in range(5):
-        print("pushing msg {0}".format(reqnum))
-        socket_push.send("msg {0}".format(reqnum))
-        fuzz()
+        start_evt.wait()  # wait until we are ready to receive...
+        # send only 5 messages and dies
+        for reqnum in range(5):
+            print("pushing msg {0}".format(reqnum))
+            try:
+                socket_push.send(b"msg %c" % reqnum)
+            except Exception as e:
+                raise e
+            fuzz()
 
 
 def test_req_rep_tcp():
 
     def client(port, evt):
-        context = zmq.Context()
-        socket = context.socket(zmq.REQ)
-        socket.connect("tcp://127.0.0.1:{0}".format("5557"))
-        print("Client connected on port: {0}".format(port))
+        with zmq.Context() as context:
+            socket = context.socket(zmq.REQ)
+            socket.connect("tcp://127.0.0.1:{0}".format("5557"))
+            print("Client connected on port: {0}".format(port))
 
-        evt.wait()  # wait until server is ready to receive...
-        # send only 5 request and dies
-        for reqnum in range(5):
-            print("req {0} => ".format(reqnum), end='')
-            socket.send("msg {0}".format(reqnum))
-            resp = socket.recv()  # getting ( and ignoring ) response data
-            print("resp {0}".format(resp))
-            fuzz()
+            evt.wait()  # wait until server is ready to receive...
+            # send only 5 request and dies
+            for reqnum in range(5):
+                print("req {0} => ".format(reqnum), end='')
+                try:
+                    socket.send(b"msg %c" % reqnum)
+                except Exception as e:
+                    # CAREFUL : excepting here will block the test (server is still waiting...)
+                    raise e
+                resp = socket.recv()  # getting ( and ignoring ) response data
+                print("resp {0}".format(resp))
+                fuzz()
 
-    start_evt = Event()
-    Process(target=client, args=("5557", start_evt)).start()
+    start_evt = multiprocessing.Event()
+    client_proc = multiprocessing.Process(target=client, args=("5557", start_evt))
+    client_proc.start()
 
     # Server
-    context = zmq.Context()
-    socket_rep = context.socket(zmq.REP)
-    socket_rep.bind("tcp://127.0.0.1:{0}".format("5557"))
-    print("Server ready on port {0}".format("5557"))
+    with zmq.Context() as context:
+        context.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
+        socket_rep = context.socket(zmq.REP)
+        socket_rep.bind("tcp://127.0.0.1:{0}".format("5557"))
+        print("Server ready on port {0}".format("5557"))
 
-    # Initialize poll set
-    poller = zmq_poller()
-    poller.register(socket_rep, zmq.POLLIN)
+        # Initialize poll set
+        poller = zmq_poller()
+        poller.register(socket_rep, zmq.POLLIN)
 
-    # Work on requests from client
-    reqnum = 0
+        # Work on requests from client
+        reqnum = 0
 
-    # wait until se are
-    start_evt.set()  # signal we are ready to start serving client requests
-    while reqnum < 5:
-        socks = dict(poller.poll())
-        if socket_rep in socks and socks[socket_rep] == zmq.POLLIN:
-            socket_rep.recv()  # getting (and ignoring) request data
-            reqnum += 1
-            socket_rep.send("Got it !")
+        # wait until se are
+        start_evt.set()  # signal we are ready to start serving client requests
+        while reqnum < 4:
+            socks = dict(poller.poll())
+            if socket_rep in socks and socks[socket_rep] == zmq.POLLIN:
+                socket_rep.recv()  # getting (and ignoring) request data
+                reqnum += 1
+                socket_rep.send(b"Got it !")
+
+    client_proc.join()
 
 
 
@@ -242,6 +259,4 @@ if __name__ == "__main__":
 #     Process(target=server_rep_tcp, args=(server_rep_port,)).start()
 #     Process(target=server_pub_tcp, args=(server_pub_port,)).start()
 #     Process(target=client, args=(server_push_port, server_pub_port,)).start()
-    filepath = os.path.relpath(__file__)
-    print(filepath)
-    pytest.main(['-s', '-x', filepath])
+    pytest.main(['-s', '-x', __file__])

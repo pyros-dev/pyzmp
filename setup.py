@@ -3,13 +3,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import importlib
+import runpy
 
 import setuptools
 
 # Ref : https://packaging.python.org/single_source_version/#single-sourcing-the-version
-with open('pyzmp/_version.py') as vf:
-    exec(vf.read())
+pyzmp_version = runpy.run_path('pyzmp/_version.py')
 
 # Best Flow :
 # Clean previous build & dist
@@ -160,7 +159,7 @@ class RosDevelopCommand(setuptools.Command):
 
 
 setuptools.setup(name='pyzmp',
-    version=__version__,
+    version=pyzmp_version.get('__version__'),
     description='ZeroMq based multiprocessing framework.',
     url='http://github.com/asmodehn/pyzmp',
     author='AlexV',
@@ -168,7 +167,15 @@ setuptools.setup(name='pyzmp',
     license='BSD',
     packages=[
         'pyzmp',
-        'pyzmp.tests'
+        'pyzmp.tests',
+        'pyzmp.service',
+        'pyzmp.service.tests',
+        'pyzmp.service.provider',
+        'pyzmp.service.provider.tests',
+        'pyzmp.service.provider.selectors',
+        'pyzmp.service.provider.selectors.tests',
+        'pyzmp.service.provider.tests',
+        'pyzmp.service.provider.transport',
     ],
     entry_points={
         'console_scripts': [

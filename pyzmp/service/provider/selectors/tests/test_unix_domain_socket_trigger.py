@@ -5,11 +5,9 @@ import time
 import sys
 import random
 import pytest
-from multiprocessing import Process
+import multiprocessing
 
 
-
-@pytest.nottest
 def server_push_ipc(port="5556"):
     context = zmq.Context()
     socket = context.socket(zmq.PUSH)
@@ -25,7 +23,6 @@ def server_push_ipc(port="5556"):
         time.sleep(1)
 
 
-@pytest.nottest
 def server_pub_ipc(port="5558"):
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
@@ -42,7 +39,6 @@ def server_pub_ipc(port="5558"):
         time.sleep(1)
 
 
-@pytest.nottest
 def server_rep_ipc(port="5558"):
     context = zmq.Context()
     socket = context.socket(zmq.REP)
@@ -97,7 +93,7 @@ def client(port_push, port_sub):
 
 # One fixture == One process strategy
 # to test things as independently from each other as possible (we still fork from the same interpreter though...)
-class TestProactor(UnitTest):
+class TestProactor(object):
     def __init__(self, *args, **kwargs):
         super(TestProactor, self).__init__(*args, **kwargs)
 
@@ -112,6 +108,6 @@ if __name__ == "__main__":
     # Now we can run a few servers
     server_push_port = "5556"
     server_pub_port = "5558"
-    Process(target=server_push, args=(server_push_port,)).start()
-    Process(target=server_pub, args=(server_pub_port,)).start()
-    Process(target=client, args=(server_push_port,server_pub_port,)).start()
+    multiprocessing.Process(target=server_push, args=(server_push_port,)).start()
+    multiprocessing.Process(target=server_pub, args=(server_pub_port,)).start()
+    multiprocessing.Process(target=client, args=(server_push_port, server_pub_port,)).start()
