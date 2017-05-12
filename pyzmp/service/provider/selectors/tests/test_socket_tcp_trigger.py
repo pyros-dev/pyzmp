@@ -19,7 +19,7 @@ import socket
 import six
 
 
-from pyzmp.service.provider.selectors.zmq_poller import zmq_poller
+from pyzmp.service.provider.selectors.zmq import Poller as zmq_poller
 
 
 def fuzz():

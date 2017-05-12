@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import logging
 
@@ -19,7 +18,7 @@ try:
     from .service_pb2 import ServiceRequestImpl, ServiceResponseImpl, ServiceExceptionImpl
     _PROTOBUF = True
 except (ImportError):
-    logging.warn("ZMQ : Protobuf message implementation not found. Using pickle based protocol")
+    logging.warning("ZMQ : Protobuf message implementation not found. Using pickle based protocol")
     # Note : pickleable interface is inferior since type is not checked on assignment.
     # however the functional pickle interface is better than the object oriented protobuf message interface.
     # Another difference is that namedtuple are readonly, which is okay in most cases.

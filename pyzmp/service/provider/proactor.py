@@ -30,10 +30,10 @@ try:
 except ImportError:  # if tblib is not present, we will not be able to forward the traceback
     Traceback = None
 
-from pyzmp.message import ServiceRequest, ServiceResponse, ServiceResponse_dictparse, ServiceException, ServiceException_dictparse
+from pyzmp.proto.message import ServiceRequest, ServiceResponse, ServiceResponse_dictparse, ServiceException, ServiceException_dictparse
 
 from pyzmp.exceptions import UnknownServiceException, UnknownRequestTypeException
-from pyzmp.message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
+from pyzmp.proto.message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
 from pyzmp.master import manager
 from pyzmp.exceptions import UnknownResponseTypeException
 from pyzmp.exceptions import UnknownServiceException
@@ -50,7 +50,7 @@ class Provider(object):
     def __init__(self, node_name, svc_address):
         self._svc_providers = {}
         self.node_name = node_name
-        self.svc_address = svc_address
+        self.svc_address = svc_address  # careful : advertising services might be done differently, depending on transport used...
 
     def provides(self, svc_callback, inst=None, service_name=None):
         service_name = service_name or svc_callback.__name__
@@ -66,7 +66,7 @@ class Provider(object):
         # we store an endpoint ( bound method or unbound function )
         self._svc_providers.pop(service_name)
 
-    def dispatch_and_reply(self, req, svc_socket):
+    def _dispatch_and_reply(self, req, svc_socket):
         if req.service and req.service in self._svc_providers.keys():
 
             request_args = pickle.loads(req.args) if req.args else ()
@@ -84,7 +84,7 @@ class Provider(object):
         else:
             raise UnknownServiceException("Unknown Service {0}".format(req.service))
 
-    def activate(self):
+    def _activate(self):
         @contextlib.contextmanager
         def activate_cm():
             # advertising services
@@ -105,25 +105,50 @@ class Provider(object):
             services_lock.release()
         return activate_cm()
 
-    def eventloop_until(self, svc_address, exit, *args, **kwargs):
+    def eventloop(self, started_evt, terminate_evt, update_func=None, *args, **kwargs):
+        """
+        :param started_evt: Event to be set when the loop has started (feedback)
+        :param terminate_evt: Event to be set when the loop has to terminate (command)
+        :param update_func: update function to call in the loop. (internal continuation in loop)
+        :param args: arguments to pass to update_func
+        :param kwargs: keyword arguments to pass to update_func
+        :return: the exit status of update_func (supporting a one time task execution) if there is any,
+         0 (success) otherwise, assuming this was a long running process that didn't crash.
+        """
         zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
         # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
         zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
         svc_socket = zcontext.socket(zmq.REP)  # Ref : http://api.zeromq.org/2-1:zmq-socket # TODO : ROUTER instead ?
-        svc_socket.bind(svc_address, )
+
+        svc_address = self.svc_address
+        addr_split = svc_address.split(':')
+        # TODO : check if this logic is already in zmq socket ?
+        if len(addr_split) < 2 and addr_split[0] in ['tcp']:
+            port = svc_socket.bind_to_random_port(svc_address)
+            svc_address += ':' + six.text_type(port)
+        else:  # the port has been specified
+            svc_socket.bind(svc_address)
+        # setting actual address member of our instance
+        self.svc_address = svc_address
 
         poller = zmq.Poller()
         poller.register(svc_socket, zmq.POLLIN)
 
+        # TODO : setting a multiprocessing Event to declare we have started and are ready to process requests
+
         # Initializing all context managers
-        with self.activate() as cm:
+        with self._activate() as cm:
 
             # Starting the clock
             start = time.time()
 
+            # signaling we have started and are ready to receive messages
+            started_evt.set()
+
+            exitstatus = None
             first_loop = True
             # loop listening to connection
-            while not exit.is_set():
+            while not terminate_evt.is_set():
 
                 # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
                 socks = dict(poller.poll(timeout=100))
@@ -133,7 +158,7 @@ class Provider(object):
                         req_unparsed = svc_socket.recv()
                         req = ServiceRequest_dictparse(req_unparsed)
                         if isinstance(req, ServiceRequest):
-                            self.dispatch_and_reply(req=req, svc_socket=svc_socket)
+                            self._dispatch_and_reply(req=req, svc_socket=svc_socket)
                         else:  # should not happen : dictparse would fail before reaching here...
                             raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
                     except Exception:  # we transmit back all errors, and keep spinning...
@@ -162,7 +187,7 @@ class Provider(object):
                 start = now
 
                 # replacing the original Process.run() call, passing arguments to our target
-                if self._target:
+                if update_func:
                     # bwcompat
                     kwargs['timedelta'] = timedelta
 
@@ -172,17 +197,16 @@ class Provider(object):
                     logging.debug(
                         "[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(
                             **locals()))
-                    exitstatus = self._target(*args, **kwargs)
+                    exitstatus = update_func(*args, **kwargs)
 
                 if first_loop:
                     # signalling startup only at the end of the loop, only the first time
-                    self.started.set()
                     first_loop = False
 
                 if exitstatus is not None:
                     break
 
-            if self.started.is_set() and exitstatus is None and self.exit.is_set():
+            if started_evt.is_set() and exitstatus is None and terminate_evt.is_set():
                 # in the not so special case where we started, we didnt get exit code and we exited,
                 # this is expected as a normal result and we set an exitcode here of 0
                 # As 0 is the conventional success for unix process successful run

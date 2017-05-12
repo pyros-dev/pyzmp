@@ -17,7 +17,7 @@ try:
 except ImportError:  # if tblib is not present, we will not be able to forward the traceback
     Traceback = None
 
-from pyzmp.message import ServiceRequest, ServiceResponse_dictparse
+from pyzmp.proto.message import ServiceRequest, ServiceResponse_dictparse
 
 from pyzmp.exceptions import UnknownResponseTypeException
 from pyzmp.service.provider.proactor import services

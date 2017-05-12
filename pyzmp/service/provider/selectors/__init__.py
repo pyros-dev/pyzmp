@@ -15,5 +15,5 @@
 #
 # else:
     # but if some specific selector is already setup, we should use this one instead
-from .zmq_poller import zmq_poller
+from .zmq import Poller as zmq_poller
 
