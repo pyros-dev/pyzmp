@@ -8,5 +8,5 @@ Ref : http://hal.upmc.fr/file/index/docid/555588/filename/techreport.pdf
 
 # TODO : meta class
 class Atom(object):
-    
+    pass
 

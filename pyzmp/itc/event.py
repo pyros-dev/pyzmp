@@ -8,6 +8,8 @@ EventTuple = collections.namedtuple("EventTuple", "is_leaf left right")
 class EventForkException(Exception):
     pass
 
+
+# TODO : find better implementation (optimized for pypy)
 class Event:
     """
     This class represent an event. Currently serialized with pickle algorithm by default.
@@ -69,9 +71,9 @@ class Event:
             self.left.drop(mm)
             self.right.drop(mm)
 
-    # TODO : rename this
+    # TODO : rename this (and drop)
     def lift(self, val):
-        self.value = self.value+ val
+        self.value = self.value + val
 
 
     @staticmethod
@@ -82,7 +84,7 @@ class Event:
 
     def drop(self, val):
         if val <= self. value:
-            self. value = self.value - val
+            self.value = self.value - val
 
     def height(self):
         if not self.isLeaf:
@@ -94,7 +96,7 @@ class Event:
 
     def leq(self, e2):
         if not self.isLeaf and not e2.isLeaf:
-            if self. value > e2.value return False
+            if self. value > e2.value: return False
 
             xl1 = Event.lift(self. value, self.left)
             xl2 = Event.lift(e2.value, e2.left)

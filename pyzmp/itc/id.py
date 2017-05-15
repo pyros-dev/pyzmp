@@ -7,144 +7,141 @@ import logging
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler)
 
-EventTuple = collections.namedtuple("EventTuple", "is_leaf left right")
+IdNodeTuple = collections.namedtuple("IdNodeTuple", "left right")
+IdLeafTuple = collections.namedtuple("IdLeafTuple", "value")
+
 
 class IDSumException(Exception):
     pass
 
 
+# TODO : find better implementation (optimized for pypy)
 
-class Id:
-    __slots__ = ['value', 'left', 'right']
 
-    def __init__(self, val = None):
-        self.value = val or 1
-        self.left = None
-        self.right = None
+class IdNode:
+    __slots__ = ['left', 'right']
+
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
 
     @property
     def isLeaf(self):
-        return self.left is None and self.right is None
+        return False
 
     def __getstate__(self):
-        return EventTuple(value=self.value, left=self.left, right=self.right)
+        return IdNodeTuple(left=self.left, right=self.right)
 
     def __setstate__(self, state):
-        self.value = state.value
         # recursively rebuilding our hierarchy...
         self.left = copy.copy(state.left)
         self.right = copy.copy(state.right)
 
-
-    def split(self):
-        i1 = Id()
-        i2 = Id()
-
-        if self.isLeaf and self.value == 0:  # id = 0
-            _logger.warning("ID == 0 ???!!!!?")
-            i1.setAsLeaf()
-            i1.setValue(0)
-            i2.setAsLeaf()
-            i2.setValue(0)
-        elif self.isLeaf and self.value == 1:  # id = 1
-            i1.setAsNode()
-            i1.setValue(0)
-            i1.left = Id(1)
-            i1.right = Id(0)
-
-            i2.setAsNode()
-            i2.setValue(0)
-            i2.left = Id(0)
-            i2.right = Id(1)
-        else:
-            if not self.isLeaf and (self.left.isLeaf and self.left.value == 0) and (not self.right.isLeaf or self.right.value == 1):  # id = (0, i)
-                ip = self.right.split()
-
-                i1.setAsNode()
-                i1.value=0
-                i1.left=Id(0)
-                i1.right=ip[0]
-
-                i2.setAsNode()
-                i2.value=0
-                i2.left=Id(0)
-                i2.right=ip[1]
-            elif not self.isLeaf and (not self.left.isLeaf or self.left.value == 1) and (self.right.isLeaf and self.right.value == 0):  # id = (i, 0)
-                ip = self.left.split()
-
-                i1.setAsNode()
-                i1.value=0
-                i1.left=ip[0]
-                i1.right=Id(0)
-
-                i2.setAsNode()
-                i2.value=0
-                i2.left=ip[1]
-                i2.right=Id(0)
-
-            elif not self.isLeaf and (not self.left.isLeaf or self.left.value == 1) and (not self.right.isLeaf and self.right.value == 1):  # id = (i1, i2)
-                i1.setAsNode()
-                i1.value = 0
-                i1.left=self.left.clone()
-                i1.right=Id(0)
-
-                i2.setAsNode()
-                i2.value=0
-                i2.left=Id(0)
-                i2.right(self.right.clone())
-
-        res = (i1, i2)
-        return res
-
-    @staticmethod
-    def sum(i1, i2):
-        # sum(0, X) -> X;
-		# sum(X, 0) -> X;
-		# sum({L1,R1}, {L2, R2}) -> norm_id({sum(L1, L2), sum(R1, R2)}).
-
-        if i1.isLeaf and i1.value == 0:
-            i1.copy(i2)
-        elif i2.isLeaf and i2.value == 0:
-            # i1 is the result
-            pass
-        elif not i1.isLeaf and not i2.isLeaf:
-            Id.sum(i1.left, i2.left)
-            Id.sum(i1.right, i2.right)
-            i1.normalize()
-        else:
-            raise IDSumException(" i1: {i1.value} i2: {i2.value}".format(**locals()))
-
-
     def normalize(self):
-        if not self.isLeaf and self.left.isLeaf and self.left.value == 0 and self.right.isLeaf and self.right.value == 0:
-            self.setAsLeaf()
-            self.value = 0
-            self.left = self.right = None
-        elif not self.isLeaf and self.left.isLeaf and self.left.value == 1 and self.right.isLeaf and self.right.value == 1:
-            self.setAsLeaf()
-            self.value = 1
-            self.left = self.right = None
-        # else do nothing
-
-
-	def setAsLeaf(self):
-        self.left = None
-        self.right = None
-
-    def setAsNode(self):
-        self.value = -1
-        self.left = Id(1)
-        self.right = Id(0)
-
+        """normalize and Id field. applies only to IdNode and return an IdLeaf if possible"""
+        # norm((0, 0)) = 0
+        # norm((1, 1)) = 1
+        # norm(i) = i
+        if self.left.isLeaf and self.left.value == 0 and self.right.isLeaf and self.right.value == 0:
+            return IdLeaf(0)
+        elif self.left.isLeaf and self.left.value == 1 and self.right.isLeaf and self.right.value == 1:
+            return IdLeaf(1)
+        return self
 
     def __repr__(self):
-        return str(self.value) if self.isLeaf else "(" + repr(self.left) + ", " + repr(self.right) + ")"
+        return "(" + repr(self.left) + ", " + repr(self.right) + ")"
 
     def __eq__(self, other):
         if other is None:
             return False
-        if self.isLeaf and other.isLeaf:
+        return self.left == other.left and self.right == other.right
+
+    def split(self):
+        """
+        Splitting the Id
+        :return: tuple of two ids
+        """
+        if (self.left.isLeaf and self.left.value == 0) and (not self.right.isLeaf or self.right.value == 1):  # id = (0, i)
+            ip = self.right.split()
+            i1 = IdNode(IdLeaf(0), ip[0])
+            i2 = IdNode(IdLeaf(0), ip[1])
+
+        elif (not self.left.isLeaf or self.left.value == 1) and (self.right.isLeaf and self.right.value == 0):  # id = (i, 0)
+            ip = self.left.split()
+            i1 = IdNode(ip[0], IdLeaf(0))
+            i2 = IdNode(ip[1], IdLeaf(0))
+
+        elif (not self.left.isLeaf or self.left.value == 1) and (not self.right.isLeaf or self.right.value == 1):  # id = (i1, i2)
+            i1 = IdNode(copy.copy(self.left), IdLeaf(0))
+            i2 = IdNode(IdLeaf(0), copy.copy(self.right))
+
+        res = IdNode(i1, i2)
+        return res
+
+    def __add__(self, other):
+        if other.isLeaf and other.value == 0:
+            pass
+        elif not other.isLeaf:
+            self.left = self.left + other.left
+            self.right = self.right + other.right
+            self.normalize()
+        else:
+            raise IDSumException(" i1: {i1.value} i2: {i2.value}".format(**locals()))
+
+        return self
+
+
+class IdLeaf:
+    __slots__ = ['value']
+
+    def __init__(self, val=1):
+        self.value = val
+
+    @property
+    def isLeaf(self):
+        return True
+
+    def __getstate__(self):
+        return IdLeafTuple(value=self.value)
+
+    def __setstate__(self, state):
+        self.value = state.value
+
+    def split(self):
+        """
+        Splitting the Id
+        :return: tuple of two ids
+        """
+        if self.value == 0:  # id = 0
+            _logger.warning("ID == 0 ???!!!!?")
+            i1 = IdLeaf(0)
+            i2 = IdLeaf(0)
+        elif self.value == 1:  # id = 1
+            i1 = IdNode(IdLeaf(1), IdLeaf(0))
+            i2 = IdNode(IdLeaf(0), IdLeaf(1))
+
+        res = IdNode(i1, i2)
+        return res
+
+    def __add__(self, other):
+        # sum(0, X) -> X;
+        # sum(X, 0) -> X;
+        # sum({L1,R1}, {L2, R2}) -> norm_id({sum(L1, L2), sum(R1, R2)}).
+
+        if self.value == 0:
+            return other
+        elif other.isLeaf and other.value == 0:
+            return self
+        else:
+            raise IDSumException(" i1: {i1.value} i2: {i2.value}".format(**locals()))
+
+    def __repr__(self):
+        return str(self.value)
+
+    def __eq__(self, other):
+        if other is None:
+            return False
+        try:
             return self.value == other.value
-        if not self.isLeaf and not other.isLeaf:
-            return self.left == other.left and self.right == other.right
-        return False
+        except AttributeError:  # other doesnt have value attribute
+            return False
