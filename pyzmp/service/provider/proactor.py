@@ -6,6 +6,7 @@ from __future__ import print_function
 # Here we are polling zmp directly.
 
 import contextlib
+import multiprocessing
 import types
 
 import six
@@ -105,10 +106,11 @@ class Provider(object):
             services_lock.release()
         return activate_cm()
 
-    def eventloop(self, started_evt, terminate_evt, update_func=None, *args, **kwargs):
+    def eventloop(self, started_evt, terminate_evt, assigned_port=None, update_func=None, *args, **kwargs):
         """
         :param started_evt: Event to be set when the loop has started (feedback)
         :param terminate_evt: Event to be set when the loop has to terminate (command)
+        :param assigned_port: Value to be set when the port has been assigned (useful for test when port is not known previously)
         :param update_func: update function to call in the loop. (internal continuation in loop)
         :param args: arguments to pass to update_func
         :param kwargs: keyword arguments to pass to update_func
@@ -122,10 +124,12 @@ class Provider(object):
 
         svc_address = self.svc_address
         addr_split = svc_address.split(':')
-        # TODO : check if this logic is already in zmq socket ?
-        if len(addr_split) < 2 and addr_split[0] in ['tcp']:
+
+        if len(addr_split) < 3 and addr_split[0] in ['tcp']:
             port = svc_socket.bind_to_random_port(svc_address)
-            svc_address += ':' + six.text_type(port)
+            with assigned_port.get_lock():
+                assigned_port = multiprocessing.Value(port)
+            svc_address += ':' + six.text_type(assigned_port)
         else:  # the port has been specified
             svc_socket.bind(svc_address)
         # setting actual address member of our instance

@@ -29,9 +29,11 @@ def test_update_once():
     # test verifying that we can call update only once and get the exit status
     pass
 
+
 def test_update_loop():
     # test verifying that we can call update in a loop
     pass
+
 
 def test_provide_activate():
     # test providing and activating and calling the service, in different sequence orders
@@ -39,7 +41,6 @@ def test_provide_activate():
     def provider_test(name, address, started_evt, terminate_evt, port=None):
         # Note we do not provide the port, because we want the system to pick one for us (test usecase)
         provider = pyzmp.service.provider.proactor.Provider(name, address)
-        port = provider.svc_address.split(':')[-1]  # sending the dynamic port back to our parent.
 
         def provided_svctest():
             return 42
@@ -55,8 +56,12 @@ def test_provide_activate():
 
         provider.withholds(service_name='withheld_svctest')
 
-        # Looping forever
-        provider.eventloop(started_evt=started_evt, terminate_evt=terminate_evt)
+        # Looping until terminate...
+        try:
+            provider.eventloop(started_evt=started_evt, terminate_evt=terminate_evt, assigned_port=port)
+        except Exception as e:
+            # CAREFUL : excepting here will block the test...
+            raise e
 
     started_evt = multiprocessing.Event()
     terminate_evt = multiprocessing.Event()
@@ -72,7 +77,7 @@ def test_provide_activate():
     started_evt.wait()
 
     # here the port should be set
-    socket.connect('tcp://127.0.0.1.{0}'.format(provider_port))
+    socket.connect('tcp://127.0.0.1:{0}'.format(provider_port))
     print("Client connected on : {0}".format('tcp://127.0.0.1.{0}'.format(provider_port)))
 
     # try calling each service
