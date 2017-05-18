@@ -5,10 +5,14 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
+import os
 import sys
 import tempfile
 import multiprocessing, multiprocessing.reduction
 import types
+import uuid
+
+import errno
 import zmq
 import socket
 import logging
@@ -134,7 +138,7 @@ class Node(object):
     EndPoint = namedtuple("EndPoint", "self func")
 
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
-    def __init__(self, name='pyzmp_node', socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
+    def __init__(self, name=None, socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
         """
         Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
         :param name: Name of the node
@@ -145,7 +149,7 @@ class Node(object):
         # TODO check name unicity
         # using process as delegate
         self._pargs = {
-            'name': name,
+            'name': name or str(uuid.uuid4()),
             'args': args or (),
             'kwargs': kwargs or {},
             'target': self.run,  # Careful : our run() is not the same as the one for Process
@@ -182,7 +186,7 @@ class Node(object):
 
     def has_started(self):
         """
-        :return: True if the node has started (update() called at least once). Might still be alive, or not...
+        :return: True if the node has started (update() might not have been called yet). Might still be alive, or not...
         """
         return self.started.is_set()
 
@@ -303,9 +307,12 @@ class Node(object):
 
         # timeout None means we want to wait and ensure it has started
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        return self.started.wait(timeout=timeout)  # blocks until we know true or false
-        # TODO : here we should probably return the zmp url as interface to connect to the node...
+        if self.started.wait(timeout=timeout):  # blocks until we know true or false
+            return self._svc_address  # returning the zmp url as a way to connect to the node
+            # CAREFUL : doesnt make sense if this node only run a one-time task...
         # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
+        else:
+            return False
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
@@ -379,11 +386,34 @@ class Node(object):
 
         print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
 
+
         zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
         # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
         zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
         svc_socket = zcontext.socket(zmq.REP)  # Ref : http://api.zeromq.org/2-1:zmq-socket # TODO : ROUTER instead ?
-        svc_socket.bind(self._svc_address,)
+
+        try:  # attempting binding socket
+            svc_socket.bind(self._svc_address,)
+        except zmq.ZMQError as ze:
+            if ze.errno == errno.ENOENT:  # No such file or directory
+                # TODO : handle all possible cases
+                fpath = self._svc_address.split(':')[1]
+                if fpath.startswith("//"): fpath = fpath[2:]
+                try:
+                    os.makedirs(os.path.dirname(fpath))
+                except OSError as ose:
+                    if ose.errno == errno.EEXIST and os.path.isdir(fpath):
+                        pass
+                    else:
+                        raise
+                # try again or break
+                svc_socket.bind(self._svc_address, )
+            else:
+                raise
+
+        except Exception as e:
+            raise
+
 
         poller = zmq.Poller()
         poller.register(svc_socket, zmq.POLLIN)
@@ -399,6 +429,11 @@ class Node(object):
             first_loop = True
             # loop listening to connection
             while not self.exit.is_set():
+
+                # signalling startup only the first time, just after having check for exit request.
+                # We need to guarantee at least ONE call to update.
+                if first_loop:
+                    self.started.set()
 
                 # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
                 socks = dict(poller.poll(timeout=100))
@@ -462,8 +497,6 @@ class Node(object):
                     exitstatus = self._target(*args, **kwargs)
 
                 if first_loop:
-                    # signalling startup only at the end of the loop, only the first time
-                    self.started.set()
                     first_loop = False
 
                 if exitstatus is not None:
