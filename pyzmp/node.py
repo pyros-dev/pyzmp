@@ -5,12 +5,14 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
+import os
 import sys
 import tempfile
 import multiprocessing, multiprocessing.reduction
 import types
 import uuid
 
+import errno
 import zmq
 import socket
 import logging
@@ -184,7 +186,7 @@ class Node(object):
 
     def has_started(self):
         """
-        :return: True if the node has started (update() called at least once). Might still be alive, or not...
+        :return: True if the node has started (update() might not have been called yet). Might still be alive, or not...
         """
         return self.started.is_set()
 
@@ -307,6 +309,7 @@ class Node(object):
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
         if self.started.wait(timeout=timeout):  # blocks until we know true or false
             return self._svc_address  # returning the zmp url as a way to connect to the node
+            # CAREFUL : doesnt make sense if this node only run a one-time task...
         # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
         else:
             return False
@@ -383,11 +386,34 @@ class Node(object):
 
         print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
 
+
         zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
         # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
         zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
         svc_socket = zcontext.socket(zmq.REP)  # Ref : http://api.zeromq.org/2-1:zmq-socket # TODO : ROUTER instead ?
-        svc_socket.bind(self._svc_address,)
+
+        try:  # attempting binding socket
+            svc_socket.bind(self._svc_address,)
+        except zmq.ZMQError as ze:
+            if ze.errno == errno.ENOENT:  # No such file or directory
+                # TODO : handle all possible cases
+                fpath = self._svc_address.split(':')[1]
+                if fpath.startswith("//"): fpath = fpath[2:]
+                try:
+                    os.makedirs(os.path.dirname(fpath))
+                except OSError as ose:
+                    if ose.errno == errno.EEXIST and os.path.isdir(fpath):
+                        pass
+                    else:
+                        raise
+                # try again or break
+                svc_socket.bind(self._svc_address, )
+            else:
+                raise
+
+        except Exception as e:
+            raise
+
 
         poller = zmq.Poller()
         poller.register(svc_socket, zmq.POLLIN)
@@ -399,6 +425,9 @@ class Node(object):
 
             # Starting the clock
             start = time.time()
+
+            # signalling startup only the first time
+            self.started.set()
 
             first_loop = True
             # loop listening to connection
@@ -466,8 +495,6 @@ class Node(object):
                     exitstatus = self._target(*args, **kwargs)
 
                 if first_loop:
-                    # signalling startup only at the end of the loop, only the first time
-                    self.started.set()
                     first_loop = False
 
                 if exitstatus is not None:
