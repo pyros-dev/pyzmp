@@ -2,8 +2,28 @@ Changelog
 =========
 
 
-(unreleased)
-------------
+0.0.16 (2017-05-18)
+-------------------
+- Merge pull request #27 from asmodehn/expose_url. [AlexV]
+
+  default node name is now uuid. now returning svc address on node start.
+- Signaling node start after checking for exit request, to guarantee at
+  least one call to update. [alexv]
+- Now signalling started before running target function. improved error
+  handling on socket bind. [alexv]
+- Bumping version since we have an API change. [alexv]
+- Default node name is now uuid. now returning svc address on node
+  start. [alexv]
+
+
+0.0.15 (2017-05-02)
+-------------------
+- Preparing 0.0.15. [AlexV]
+- Merge pull request #24 from asmodehn/pyup-update-
+  gitchangelog-2.4.1-to-3.0.3. [AlexV]
+
+  Update gitchangelog to 3.0.3
+- Update gitchangelog from 2.4.1 to 3.0.3. [pyup-bot]
 - Merge pull request #18 from asmodehn/daemon_node. [AlexV]
 
   now able to create daemon nodes
