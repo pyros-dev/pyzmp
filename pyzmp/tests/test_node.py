@@ -140,6 +140,8 @@ def test_node_creation_args():
     assert n1.is_alive()
     assert svc_url
 
+    # starting and shutdown should at least guarantee ONE call of update function.
+
     exitcode = n1.shutdown()
     assert exitcode == 0
     assert not n1.is_alive()

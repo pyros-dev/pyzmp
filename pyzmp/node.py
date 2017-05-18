@@ -426,12 +426,14 @@ class Node(object):
             # Starting the clock
             start = time.time()
 
-            # signalling startup only the first time
-            self.started.set()
-
             first_loop = True
             # loop listening to connection
             while not self.exit.is_set():
+
+                # signalling startup only the first time, just after having check for exit request.
+                # We need to guarantee at least ONE call to update.
+                if first_loop:
+                    self.started.set()
 
                 # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
                 socks = dict(poller.poll(timeout=100))
