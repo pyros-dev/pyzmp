@@ -41,8 +41,9 @@ def test_node_creation_termination():
     """Checks that a node can be started and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    n1.start()
+    svc_url = n1.start()
     assert n1.is_alive()
+    assert svc_url
     exitcode = n1.shutdown()
     assert exitcode == 0  # default node should spin without issues
     assert not n1.is_alive()
@@ -53,8 +54,8 @@ def test_node_timeout_creation_termination():
     """Checks that a node can be started with timeout and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    started = n1.start(1)
-    assert started
+    svc_url = n1.start(1)
+    assert svc_url
     assert n1.is_alive()
     exitcode = n1.shutdown()
     assert exitcode == 0
@@ -67,10 +68,15 @@ def test_node_double_creation_termination():
     """Checks that a node can be started twice and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    n1.start()
+    svc_url1 =n1.start()
     assert n1.is_alive()
-    n1.start()  # this shuts down properly and restart the node
+    assert svc_url1
+    svc_url2 = n1.start()  # this shuts down properly and restart the node
     assert n1.is_alive()
+    assert svc_url2
+
+    # the node is the same (same id) so we should get same url
+    assert svc_url1 == svc_url2
 
     exitcode = n1.shutdown()
     assert exitcode == 0
@@ -83,10 +89,16 @@ def test_node_timeout_double_creation_termination():
     """Checks that a node can be started twice with timeout and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    assert n1.start(1)
+    svc_url1 = n1.start(1)
     assert n1.is_alive()
-    assert n1.start(1)  # this shuts down and restart the node
+    assert svc_url1
+
+    svc_url2 = n1.start(1)  # this shuts down and restart the node
     assert n1.is_alive()
+    assert svc_url2
+
+    # the node is the same (same id) so we should get same url
+    assert svc_url1 == svc_url2
 
     exitcode = n1.shutdown()
     assert exitcode == 0
@@ -98,8 +110,11 @@ def test_node_creation_double_termination():
     """Checks that a node can be started and shutdown twice and indicate that it ran successfully"""
     n1 = pyzmp.Node()
     assert not n1.is_alive()
-    n1.start()
+
+    svc_url1 = n1.start()
     assert n1.is_alive()
+    assert svc_url1
+
     exitcode = n1.shutdown()
     assert exitcode == 0
     assert not n1.is_alive()
@@ -121,8 +136,10 @@ def test_node_creation_args():
 
     n1 = TestArgNode(args=(ns.arg,))
     assert not n1.is_alive()
-    n1.start()
+    svc_url = n1.start()
     assert n1.is_alive()
+    assert svc_url
+
     exitcode = n1.shutdown()
     assert exitcode == 0
     assert not n1.is_alive()
@@ -142,8 +159,10 @@ def test_node_creation_args_delegate():
 
     n1 = pyzmp.Node(args=(ns.arg,), target=arguser)
     assert not n1.is_alive()
-    n1.start()
+    svc_url = n1.start()
     assert n1.is_alive()
+    assert svc_url
+
     exitcode = n1.shutdown()
     assert exitcode == 0
     assert not n1.is_alive()
@@ -164,8 +183,10 @@ def test_node_creation_kwargs():
 
     n1 = TestKWArgNode(kwargs={'intval': ns.kwarg, })
     assert not n1.is_alive()
-    n1.start()
+    svc_url = n1.start()
     assert n1.is_alive()
+    assert svc_url
+
     exitcode = n1.shutdown()
     assert exitcode == 0
     assert not n1.is_alive()
@@ -185,8 +206,10 @@ def test_node_creation_kwargs_delegate():
 
     n1 = pyzmp.Node(kwargs={'intval': ns.kwarg, }, target=kwarguser)
     assert not n1.is_alive()
-    n1.start()
+    svc_url = n1.start()
     assert n1.is_alive()
+    assert svc_url
+
     exitcode = n1.shutdown()
     assert exitcode == 0
     assert not n1.is_alive()
@@ -210,7 +233,7 @@ def test_node_running_as_context_manager():
     n1 = pyzmp.Node()
     n1.start()
     with n1:  # hooking to an already started node
-        # This might restart the node (good or bad ?)
+        # This might restart the node (might be bad but ideally should not matter.)
         assert n1.is_alive()
     assert not n1.is_alive()
 
