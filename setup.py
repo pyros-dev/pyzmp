@@ -6,10 +6,11 @@ import tempfile
 import importlib
 
 import setuptools
+import runpy
 
 # Ref : https://packaging.python.org/single_source_version/#single-sourcing-the-version
-with open('pyzmp/_version.py') as vf:
-    exec(vf.read())
+version = runpy.run_path('pyzmp/_version.py')
+__version__ = version.get('__version__')
 
 # Best Flow :
 # Clean previous build & dist
@@ -43,7 +44,7 @@ class PrepareReleaseCommand(setuptools.Command):
         # $ gitchangelog >CHANGELOG.rst
         # $ git commit CHANGELOG.rst -m "updating changelog"
         # change version in code and changelog
-        subprocess.check_call("git commit CHANGELOG.rst pyros/_version.py -m 'v{0}'".format(__version__), shell=True)
+        subprocess.check_call("git commit CHANGELOG.rst pyzmp/_version.py -m 'v{0}'".format(__version__), shell=True)
         subprocess.check_call("git push", shell=True)
 
         print("You should verify travis checks, and you can publish this release with :")
