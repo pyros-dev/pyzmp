@@ -84,9 +84,14 @@ def test_normalize():
 
 
 def test_split():
-    i1 = id.Id(3)
+    i1 = id.Id(0)
+    assert i1.split() == id.IdNode(id.idLeaf(0), id.IdLeaf(0))
 
-    assert i1.split() == i
+    i1 = id.Id(1)
+    assert i1.split() == id.IdNode(id.IdNode(id.idLeaf(1), id.IdLeaf(0)), id.IdNode(id.idLeaf(0), id.IdLeaf(1)))
+
+
+
 
     i2 = id.Id(42)
     i2.left = id.Id(2)
