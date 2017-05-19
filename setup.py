@@ -182,6 +182,7 @@ setuptools.setup(name='pyzmp',
         'tblib',  # this might not always install six (latest version does not)
         'six',
         'pyzmq',
+        'sqlalchemy',  # todo move this out to a different package once we can extract registry...
         'pytest-timeout',
         # Careful : upon install plugins can be resolved instead of core pytest package
         # => pytest should be listed last here...

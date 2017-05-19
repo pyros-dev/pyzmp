@@ -29,10 +29,6 @@ from .node import Node, current_node
 from .service import Service, services, discover, ServiceCallTimeout
 
 
-topics = manager.list()
-params = manager.list()
-
-
 from .helpers import process_watcher
 from .helpers import process_watcher_cm
 

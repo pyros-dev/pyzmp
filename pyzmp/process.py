@@ -43,15 +43,44 @@ except ImportError:
 
 
 # TODO : Nodelet ( thread, with fast intraprocess zmq comm - entity system design /vs/threadpool ?)
+
+
+class ProcessControl(object):
+    """
+    ProcessControl that provide a control interface to an already running process.
+    It will be used to allow a process to adopt another.
+    """
+
+    def __init__(self):
+        self.exit = multiprocessing.Event()
+        self.started = multiprocessing.Event()
+
+    # TODO : inverted control flow, but in a nice way ???
+    def wait_for_start(self, timeout):
+        return self.started.wait(timeout=timeout)
+
+    def has_started(self):
+        """
+        :return: True if the node has started (update() might not have been called yet). Might still be alive, or not...
+        """
+        return self.started.is_set()
+
+    def set_exit_flag(self):
+        """Request a process termination"""
+        return self.exit.set()
+
+
+# TODO : we can extend this later for debugging and more...
+
+
 # CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
-class Process(object):
+class Process(ProcessControl):
     """
     Process class that model how a process is started and stopped, can start / stop child processes,
      all in a synchronous deterministic manner.
     It mainly add synchronization primitives to multiprocessing.Process.
     """
 
-    # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
     def __init__(self, name=None, target_context=None, target_override=None, args=None, kwargs=None):
         """
         Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
@@ -68,6 +97,7 @@ class Process(object):
             'kwargs': kwargs or {},
             'target': self.run,  # Careful : our run() is not the same as the one for Process
         }
+        # TODO : we should ensure our args + kwargs are compatible with our target (to avoid later errors)
         # Careful : our own target is not the same as the one for Process
         self._target = target_override or self.target
         self.target_call_start = None
@@ -80,9 +110,8 @@ class Process(object):
         #: replacing the string duplicated from the python interpreter run
         self.new_title = True
 
-        self._target_context = target_context or self.target_time_context  # TODO: extend to list if possible ( available for python >3.1 only )
-        self.exit = multiprocessing.Event()
-        self.started = multiprocessing.Event()
+        self._target_context = target_context or self.target_context  # TODO: extend to list if possible ( available for python >3.1 only )
+        super(Process, self).__init__()
 
     def __enter__(self):
         # __enter__ is called only if we pass this instance to with statement ( after __init__ )
@@ -94,12 +123,6 @@ class Process(object):
     def __exit__(self, exception_type, exception_value, traceback):
         # make sure we cleanup when we exit
         self.shutdown()
-
-    def has_started(self):
-        """
-        :return: True if the node has started (update() might not have been called yet). Might still be alive, or not...
-        """
-        return self.started.is_set()
 
     def is_alive(self):
         if self and self._process:
@@ -217,7 +240,7 @@ class Process(object):
 
         # timeout None means we want to wait and ensure it has started
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        return self.started.wait(timeout=timeout)  # blocks until we know true or false
+        return self.wait_for_start(timeout=timeout)  # blocks until we know true or false
         # TODO: futures and ThreadPoolExecutor (so we dont need to manage our child processes ourselves...)
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
@@ -230,13 +253,13 @@ class Process(object):
 
     def shutdown(self, join=True, timeout=None):
         """
-        Clean shutdown of the node.
+        Clean shutdown of the node from the parent.
         :param join: optionally wait for the process to end (default : True)
         :return: None
         """
         if self.is_alive():  # check if process started
             print("Shutdown initiated")
-            self.exit.set()
+            self.set_exit_flag()
             if join:
                 self.join(timeout=timeout)
                 # TODO : timeout before forcing terminate (SIGTERM)
@@ -245,7 +268,7 @@ class Process(object):
         return exitcode
 
     @contextlib.contextmanager
-    def target_time_context(self):
+    def target_context(self):
         self.target_call_start = time.time()
         self.target_call_timedelta = 0
         yield

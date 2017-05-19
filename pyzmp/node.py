@@ -13,6 +13,8 @@ import types
 import uuid
 
 import errno
+
+import re
 import zmq
 import socket
 import logging
@@ -100,25 +102,21 @@ except ImportError:
 
 from .master import manager
 from .exceptions import UnknownServiceException, UnknownRequestTypeException
+from .registry import NodeRegistry
 from .message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
-from .service import service_provider_cm
+from .service import service_provider_cm, Service
 from .process import Process
 # from .service import RequestMsg, ResponseMsg, ErrorMsg  # only to access message types
 
 current_node = multiprocessing.current_process
 
-# Lock is definitely needed ( not implemented in proxy objects, unless the object itself already has it, like Queue )
-nodes_lock = manager.Lock()
-nodes = manager.dict()
-# note we do not want any "node discovery" feature here, as it might be misused.
-# The nodes should not matter for the user (client of the zmp multiprocess system).
-# => it is fine for a client to rebuild the list of nodes from the list of a set of services providers
-
+nodes = NodeRegistry()
 
 # REF : http://stackoverflow.com/questions/3024925/python-create-a-with-block-on-several-context-managers
 
 
 # TODO : Nodelet ( thread, with fast intraprocess zmq comm - entity system design /vs/threadpool ?)
+
 # CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
 class Node(Process):
 
@@ -140,19 +138,21 @@ class Node(Process):
         :return:
         """
 
-        self._target = target
+        self._target = target or self.target  # User overload can choose to call Process.target or not
         target_wrap = self._update
 
         # careful we need to swap context managers to keep the order of calling as expected
-        self.user_required_context = target_context
+        self.user_required_context = target_context or self.target_context  # getting basic target context from Process. User overload can choose to call it or not.
         # we only register the node context in for the process instance
-        super(Node, self).__init__(name=name, target_context=self._node_context, target=target_wrap, args=args, kwargs=kwargs)
+        super(Node, self).__init__(name=name, target_context=self._node_context, target_override=target_wrap, args=args, kwargs=kwargs)
 
         self.listeners = {}
         self._providers = {}
         self.tmpdir = tempfile.mkdtemp(prefix='zmp-' + self.name + '-')
         # if no socket is specified the services of this node will be available only through IPC
         self._svc_address = socket_bind if socket_bind else 'ipc://' + self.tmpdir + '/services.pipe'
+
+        self.provides(self.index)
 
     def start(self, timeout=None):
         """
@@ -165,12 +165,13 @@ class Node(Process):
 
         # timeout None means we want to wait and ensure it has started
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        if started:  # blocks until we know true or false
+        if started:
             return self._svc_address  # returning the zmp url as a way to connect to the node
             # CAREFUL : doesnt make sense if this node only run a one-time task...
         # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
         else:
             return False
+
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
@@ -188,24 +189,23 @@ class Node(Process):
         # we store an endpoint ( bound method or unbound function )
         self._providers.pop(service_name)
 
-    # TODO : shortcut to discover/build only services provided by this node ?
-
+    def index(self):
+        # TODO : return Services instance directly
+        return self._providers.keys()
 
     @contextlib.contextmanager
     def _node_context(self):
         # declaring our services first
         with service_provider_cm(self.name, self._svc_address, self._providers) as spcm:
             # advertise itself
-            nodes_lock.acquire()
-            nodes[self.name] = {'service_conn': self._svc_address}
-            nodes_lock.release()
+            while not nodes.add(self.name, self._svc_address):
+                time.sleep(0.1)
+            # Do not yield until we are register (otherwise noone can find us, there is no point.)
 
             yield
 
             # concealing itself
-            nodes_lock.acquire()
-            nodes[self.name] = {}
-            nodes_lock.release()
+            nodes.rem(self.name)
 
     @contextlib.contextmanager
     def _zmq_poller_context(self, ):
@@ -319,7 +319,7 @@ class Node(Process):
             with self._zmq_poller_context() as zcm:
 
                 # This will start looping and calling our target...
-                exitstatus = super(Node, self).run(poller=zcm.get('poller'), svc_address=zcm.get('socket'))
+                exitstatus = super(Node, self).run(poller=zcm.get('poller'), svc_socket=zcm.get('socket'))
 
         # all context managers are destroyed properly here
 
@@ -327,6 +327,65 @@ class Node(Process):
         return exitstatus  # returning last exit status from the update function
 
 
+class NodeClient(object):
+    """
+    Node Client is an object to gather stateful services for which the actual node (real world context of service) called matters
+    Note this usually leads to a brittle distributed design, and stateless services should be preferred.
+    """
+    def __init__(self, node_name, svc_address):
+        self.node_name = node_name
+
+        # we assume all nodes have an "index" service.
+        self.index_svc = Service(name='index', providers=[(node_name, svc_address)])
+
+        # we call it
+        svc_list = self.index_svc.call()
+
+        # and dynamically setup proxy calls for services RPC style
+        for s in svc_list:
+            if not hasattr(self, s):  # only if we do not have a similar attribute yet
+                svc = Service(name=s, providers=[(node_name, svc_address)])
+                svc_method = svc.call
+                svc_method.__doc__ = "Remote call for {s}".format(**locals())
+                svc_method.__name__ = s
+                setattr(self, svc_method.__name__, svc_method)
+
+    # TODO : inverted control flow (to get stream data callback), but in a nice way ?
+    # something symmetrical to function call....
+
+
+def discover(name_regex='.*', timeout=None):
+    """
+    IMPORTANT : This method is not meant to be used by final clients,
+    as it is easy to misuse and tends to produce brittle distributed software.
+    Ideally, the nodes should not matter for the user (client of the zmp multiprocess system).
+    However it is provided here because it can be useful to call stateful remote procedures.
+
+    Discovers all nodes.
+    Note : we do not want to make the discovery block undefinitely since we never know for sure if a node is running or not
+    TODO : improve with future...
+    :param name_regex: regex to filter hte nodes by name/uuid
+    :param timeout: maximum number of seconds the discover can wait for a discovery matching requirements. if None, doesn't wait.
+    """
+    start = time.time()
+    endtime = timeout if timeout else 0
+
+    reg = re.compile(name_regex)
+
+    while True:
+        timed_out = time.time() - start > endtime
+        res = nodes.get_all()
+        if res:
+            return {
+                res.get('name'): NodeClient(n.get('name'), n.get('address'))
+                for n in res if reg.match(n.get('name'))  # filtering by regex here TODO : move that feature to the Registry
+            }  # return right away if we have something
+
+        if timed_out:
+            break
+        # else we keep looping after a short sleep ( to allow time to refresh services list )
+        time.sleep(0.2)  # sleep
+    return None
 
 
 
