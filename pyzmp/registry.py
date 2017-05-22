@@ -1,45 +1,102 @@
 from __future__ import absolute_import, division, print_function
 
-import multiprocessing
-import mmap
-import uuid
+import contextlib
+from io import open
 
-import yaml
+import os
+import tempfile
+import abc
+
 import collections
-import dataset
+import yaml
+import errno
 
 
+# TODO : namedtuples ? CRDT ?
+class FileBasedRegistry(collections.MutableMapping):
+    """
+    Implements a Registry as a set of files, each one containing only one attribute.
+    """
 
-# specialized nodes registry for now... enough.
-# TODO : CRDT types...
-class NodeRegistry():
-    def __init__(self, id=None):
-        self.id = id or uuid.uuid4()
-        self.db = dataset.connect('sqlite://file:testf?mode=memory:'.format(self.id))
+    def __init__(self, value_desc, representer=None, constructor=None):
+        """
+        Initialize the registry
+        :param value_desc: The description of the value stored in this registry
+        :param representer: The YAML representer 
+        :param constructor: The YAML constructor
+        """
+        self.desc = value_desc
+        self.representer = representer
+        self.constructor = constructor
 
-        self.nodes = self.db['nodes']
+    @staticmethod
+    def _get_registry_path():
+        """
+        A deterministic way to find the path to a registry, so it can be used in any context.
+        :return: 
+        """
+        _zmp_froot = os.path.join(tempfile.gettempdir(), 'zmp')
+        return _zmp_froot
 
-    def add(self, name, address):
-        res= self.nodes.insert(dict(name=name, address=address))
-        # we only return True or False. the (local) unique key is not useful for us.
-        return res is not None
+    def _name2filepath(self, name):
+        # trying to follow the de-facto standard way to register daemon process info (as "name.pid" file for example)
+        fname = os.path.join(FileBasedRegistry._get_registry_path(), name + os.extsep + self.desc)
+        return fname
 
-    def rem(self, name):
-        res = self.nodes.delete(name=name)
-        return res
+    def _filepath2name(self):
+        for f in os.listdir(FileBasedRegistry._get_registry_path()):
+            if f.endswith(os.extsep + self.desc):
+                yield os.path.basename(f)[:-len(os.extsep + self.desc)]
 
-    # TODO : "expect" to callback only when a matching name is found
+    def __setitem__(self, key, value):
+        attrfname = self._name2filepath(key)
+        try:
+            with open(attrfname, "w") as fh:
+                # Note : we use yaml as a codec
+                yaml.dump(value, fh, default_flow_style=False)
+        except IOError as ioe:
+            if ioe.errno == errno.ENOENT:  # No such file or directory
+                # TODO : handle all possible cases
+                os.makedirs(os.path.dirname(attrfname))
+                # now we can try again...
+                with open(attrfname, "w") as fh:
+                    yaml.dump(value, fh, default_flow_style=False)
 
-    def get(self, name):
-        res = self.nodes.find_one(name=name)
-        return res
+    def __delitem__(self, key):
+        pidfname = self._name2filepath(key)
+        os.remove(pidfname)
 
-    def get_all(self):
-        res = self.nodes.all()
-        return res
+    def __getitem__(self, item):
+        fname = self._name2filepath(item)
+        try:
+            with open(fname, "r") as fh:
+                attr = yaml.load(fh)
+            return attr
+        except IOError as ioe:
+            if ioe.errno == errno.ENOENT:
+                raise KeyError
 
-    def freeze(self, filename):
-        pass
-        # TODO
+    def __iter__(self):
+        for name in self._filepath2name():
+            yield name
 
+    def __len__(self):
+        return len([a for a in self._filepath2name()])
+
+    def __str__(self):
+        return str({n: getattr(self, n) for n in self})
+
+    def __repr__(self):
+        return str({n: getattr(self, n) for n in self})
+
+    @contextlib.contextmanager
+    def registered(self, name, value):
+        # advertise itself
+        self[name] = value
+
+        # Do not yield until we are register (otherwise noone can find us, there is no point.)
+        yield
+
+        # concealing itself
+        self.pop(name)
 

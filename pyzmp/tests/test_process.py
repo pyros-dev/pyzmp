@@ -3,6 +3,7 @@ from __future__ import absolute_import
 
 # To allow python to run these tests as main script
 import functools
+import inspect
 import multiprocessing
 import sys
 import os
@@ -239,6 +240,74 @@ def test_process_running_as_context_manager():
         # This might restart the node (might be bad but ideally should not matter.)
         assert n1.is_alive()
     assert not n1.is_alive()
+
+
+# Process as fixture to guarantee cleanup
+class TestProc(object):
+    __test__ = True
+
+    def setup_method(self, method):
+        # services is already setup globally
+        self.testproc = pyzmp.Process(name="TestProcess")
+
+    def teardown_method(self, method):
+        if self.testproc.is_alive():
+            self.testproc.shutdown(join=True)
+        # if it s still alive terminate it.
+        if self.testproc.is_alive():
+            self.testproc.terminate()
+
+    # @nose.SkipTest  # to help debugging ( FIXME : how to programmatically start only one test - maybe in fixture - ? )
+    def test_process_discover(self):
+        print("\n" + inspect.currentframe().f_code.co_name)
+        assert not self.testproc.is_alive()
+
+        print("Discovering Node...")
+        testproc_client = pyzmp.Process.discover("Test.*")
+        assert testproc_client is None  # node not found until started.
+
+        self.testproc.start()
+        assert self.testproc.is_alive()
+
+        print("Discovering Node...")
+        testproc_client = pyzmp.Process.discover("Test.*")  # Note : we should not have to wait here, start() should wait long enough.
+        assert not testproc_client is None
+
+        self.testproc.shutdown()
+        assert not self.testproc.is_alive()
+
+        print("Discovering Node...")
+        testproc_client = pyzmp.Process.discover("Test.*")
+        assert testproc_client is None  # node not found any longer.
+
+
+    def test_process_crash(self):
+        print("\n" + inspect.currentframe().f_code.co_name)
+        assert not self.testproc.is_alive()
+
+        self.testproc.start()
+        assert self.testproc.is_alive()
+
+        print("Discovering Node...")
+        testproc_clients = pyzmp.Process.discover("Test.*")  # Note : we should not have to wait here, start() should wait long enough.
+        assert not testproc_clients is None
+        assert len(testproc_clients) == 1
+
+        # pick the one
+        testproc_client = testproc_clients.get("TestProcess")
+
+        # sending a signal to kill the child process
+        self.testproc.terminate()
+        # TODO : handle all kinds of ways to do that...
+
+        # wait until it dies
+        while self.testproc.is_alive():
+            time.sleep(1)
+
+        #TODO : wait a bit (less than gossip period) until processor is not found any more...
+        print("Discovering Node...")
+        testproc_client = pyzmp.Process.discover("Test.*")
+        assert testproc_client is None  # node not found any longer.
 
 
 def test_update_rate():

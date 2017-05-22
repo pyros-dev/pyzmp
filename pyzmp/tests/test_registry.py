@@ -1,99 +1,37 @@
-# -*- coding: utf-8 -*-
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
-# To allow python to run these tests as main script
-import functools
-import multiprocessing
-import sys
-import os
-import threading
+import pytest
 
-import time
+from pyzmp.registry import FileBasedRegistry
 
-import re
-
-from pyzmp.registry import NodeRegistry
-from pyzmp.process import Process
+# Testing operation combinations that make sense
 
 
-def test_registry_create():
-    reg = NodeRegistry()
+class TestFileBasedRegistry(object):
 
-    # assert len(reg) == 0
-    # assert str(reg) == "{}"
+    def setup_method(self, method):
+        self.attr_reg = FileBasedRegistry("myattr")
 
+    def teardown_method(self, method):
+        # cleaning up what might exists
+        for a in self.attr_reg:
+            self.attr_reg.pop(a)
 
-class TestRegistry(object):
-    def setup_method(self):
-        self.reg = NodeRegistry()
+    def test_store_erase(self):
 
-    def teardown_method(self):
-        self.reg = None  # let the registry be garbage collected
+        with pytest.raises(KeyError) as e_info:
+            self.attr_reg["myid"]
 
-    def test_insert(self):
-        assert self.reg.add(name='testname', address='testaddr')
-        #assert 'testname' in self.reg
-        assert self.reg.get('testname').get('address') == 'testaddr'
-        #assert len(self.reg) == 1
-        #assert str(self.reg) == "{'testname': 'testaddr'}"
+        self.attr_reg["myid"] = 42
 
-    def test_delete(self):
-        assert self.reg.add(name='testname', address='testaddr')
-        #assert 'testkey' in self.reg
-        assert self.reg.get('testname').get('address') == 'testaddr'
-        assert self.reg.rem('testname')
-        #assert 'testkey' not in self.reg
-        #assert len(self.reg) == 0
-        #assert str(self.reg) == "{}"
+        assert self.attr_reg["myid"] == 42
 
-        assert self.reg.get('testname') is None
+        self.attr_reg.pop("myid")
 
+        with pytest.raises(KeyError) as e_info:
+            self.attr_reg["myid"]
 
-class TestRegistryAcrossProcess(object):
-
-    class TestProcess(Process):
-        def target(self, reg):
-            # TODO : find a way to report errors clearly
-            assert reg.add('test_process', 'test_address')
-
-    def setup_method(self):
-        self.reg = NodeRegistry()
-
-    def teardown_method(self):
-        self.reg = None  # let the registry be garbage collected
-
-    def test_registry(self):
-        n1 = self.TestProcess(args=(self.reg,))  # passing registry as argument.
-        assert not n1.is_alive()
-        svc_url = n1.start()
-        # update might not have been called yet
-        assert n1.is_alive()
-        assert svc_url
-
-        # getting value from the registry
-        # here we need a timeout to wait for the process to add the value to the register
-        start = time.time()
-        endtime = 5
-
-        reg = re.compile('test_process')
-        test_regval = None
-        while True:
-            timed_out = time.time() - start > endtime
-            test_regval = self.reg.get('test_process')
-            if test_regval or timed_out:
-                break
-            time.sleep(0.2)
-
-        assert test_regval is not None
-        # Note : By design process doesnt offer sync over registry, this is the job of Node (which depends on Registry)
-
-        # starting and shutdown should at least guarantee ONE call of update function.
-
-        exitcode = n1.shutdown()
-        assert exitcode == 0  # TODO : shouldnt it be 42 ?
-        assert not n1.is_alive()
 
 
 if __name__ == '__main__':
-    import pytest
     pytest.main(['-s', '-x', __file__])

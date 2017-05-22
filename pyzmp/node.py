@@ -102,7 +102,7 @@ except ImportError:
 
 from .master import manager
 from .exceptions import UnknownServiceException, UnknownRequestTypeException
-from .registry import NodeRegistry
+from .registry import FileBasedRegistry
 from .message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
 from .service import service_provider_cm, Service
 from .process import Process
@@ -110,7 +110,50 @@ from .process import Process
 
 current_node = multiprocessing.current_process
 
-nodes = NodeRegistry()
+
+
+###
+#This implements a local registry, relying on the local tmp file system.
+###
+
+def _get_registry_filepath():
+    """
+    A deterministic way to find the path to a registry, so it can be used by any process.
+    :return: 
+    """
+    _zmp_froot = os.path.join(tempfile.gettempdir(), 'zmp')
+    return _zmp_froot
+
+
+def _get_node_zmp_filepath(name):
+    # trying to follow the de-facto standard way to register daemon process info,
+    # while adding an extra information : the socket opened.
+    fname = os.path.join(_get_registry_filepath(), name + ".zmp")
+    return fname
+
+
+def register_node(name, pid, zmp_addr):
+    zmpfname = _get_node_zmp_filepath(name)
+    with open(zmpfname, "xt") as fh:
+        fh.write(zmp_addr)
+
+
+def unregister_node(name):
+    zmpfname = _get_node_zmp_filepath(name)
+    os.remove(zmpfname)
+
+
+def get_node_zmp(name):
+    fname = _get_node_zmp_filepath(name)
+    with open(fname, "rt") as fh:
+        zmp_addr = fh.read()
+    return zmp_addr
+
+
+
+
+
+
 
 # REF : http://stackoverflow.com/questions/3024925/python-create-a-with-block-on-several-context-managers
 
@@ -148,6 +191,7 @@ class Node(Process):
 
         self.listeners = {}
         self._providers = {}
+        # tmpdir for now. if moved to lowlevel system stuff -> /var/run would be more appropriate
         self.tmpdir = tempfile.mkdtemp(prefix='zmp-' + self.name + '-')
         # if no socket is specified the services of this node will be available only through IPC
         self._svc_address = socket_bind if socket_bind else 'ipc://' + self.tmpdir + '/services.pipe'
@@ -198,14 +242,12 @@ class Node(Process):
         # declaring our services first
         with service_provider_cm(self.name, self._svc_address, self._providers) as spcm:
             # advertise itself
-            while not nodes.add(self.name, self._svc_address):
-                time.sleep(0.1)
+            nodes[self.name] = self._svc_address
             # Do not yield until we are register (otherwise noone can find us, there is no point.)
-
             yield
 
             # concealing itself
-            nodes.rem(self.name)
+            nodes.pop(self.name)
 
     @contextlib.contextmanager
     def _zmq_poller_context(self, ):
@@ -299,6 +341,68 @@ class Node(Process):
 
         return None  # we keep looping by default (need to deal with services here...)
 
+    class Control(object):
+        """
+        Node Client is an object to gather stateful services for which the actual node (real world context of service) called matters
+        Note this usually leads to a brittle distributed design, and stateless services should be preferred.
+        """
+
+        def __init__(self, node_name, svc_address):
+            self.node_name = node_name
+
+            # we assume all nodes have an "index" service.
+            self.index_svc = Service(name='index', providers=[(node_name, svc_address)])
+
+            # we call it
+            svc_list = self.index_svc.call()
+
+            # and dynamically setup proxy calls for services RPC style
+            for s in svc_list:
+                if not hasattr(self, s):  # only if we do not have a similar attribute yet
+                    svc = Service(name=s, providers=[(node_name, svc_address)])
+                    svc_method = svc.call
+                    svc_method.__doc__ = "Remote call for {s}".format(**locals())
+                    svc_method.__name__ = s
+                    setattr(self, svc_method.__name__, svc_method)
+
+                    # TODO : NodeObserver : inverted control flow (to get stream data callback), but in a nice way ?
+                    # something symmetrical to function call....
+
+    @staticmethod
+    def discover(name_regex='.*', timeout=None):
+        """
+        IMPORTANT : This method is not meant to be used by final clients,
+        as it is easy to misuse and tends to produce brittle distributed software.
+        Ideally, the nodes should not matter for the user (client of the zmp multiprocess system).
+        However it is provided here because it can be useful to call stateful remote procedures.
+
+        Discovers all nodes.
+        Note : we do not want to make the discovery block undefinitely since we never know for sure if a node is running or not
+        TODO : improve with future...
+        :param name_regex: regex to filter hte nodes by name/uuid
+        :param timeout: maximum number of seconds the discover can wait for a discovery matching requirements. if None, doesn't wait.
+        """
+        start = time.time()
+        endtime = timeout if timeout else 0
+
+        reg = re.compile(name_regex)
+
+        while True:
+            timed_out = time.time() - start > endtime
+            res = nodes.get_all()
+            if res:
+                return {
+                    res.get('name'): Node.Control(n.get('name'), n.get('address'))
+                    for n in res if reg.match(n.get('name'))
+                # filtering by regex here TODO : move that feature to the Registry
+                }  # return right away if we have something
+
+            if timed_out:
+                break
+            # else we keep looping after a short sleep ( to allow time to refresh services list )
+            time.sleep(0.2)  # sleep
+        return None
+
     def run(self, *args, **kwargs):
         """
         The Node main method, running in a child process (similar to Process.run() but also accepts args)
@@ -327,65 +431,8 @@ class Node(Process):
         return exitstatus  # returning last exit status from the update function
 
 
-class NodeClient(object):
-    """
-    Node Client is an object to gather stateful services for which the actual node (real world context of service) called matters
-    Note this usually leads to a brittle distributed design, and stateless services should be preferred.
-    """
-    def __init__(self, node_name, svc_address):
-        self.node_name = node_name
-
-        # we assume all nodes have an "index" service.
-        self.index_svc = Service(name='index', providers=[(node_name, svc_address)])
-
-        # we call it
-        svc_list = self.index_svc.call()
-
-        # and dynamically setup proxy calls for services RPC style
-        for s in svc_list:
-            if not hasattr(self, s):  # only if we do not have a similar attribute yet
-                svc = Service(name=s, providers=[(node_name, svc_address)])
-                svc_method = svc.call
-                svc_method.__doc__ = "Remote call for {s}".format(**locals())
-                svc_method.__name__ = s
-                setattr(self, svc_method.__name__, svc_method)
-
-    # TODO : inverted control flow (to get stream data callback), but in a nice way ?
-    # something symmetrical to function call....
 
 
-def discover(name_regex='.*', timeout=None):
-    """
-    IMPORTANT : This method is not meant to be used by final clients,
-    as it is easy to misuse and tends to produce brittle distributed software.
-    Ideally, the nodes should not matter for the user (client of the zmp multiprocess system).
-    However it is provided here because it can be useful to call stateful remote procedures.
-
-    Discovers all nodes.
-    Note : we do not want to make the discovery block undefinitely since we never know for sure if a node is running or not
-    TODO : improve with future...
-    :param name_regex: regex to filter hte nodes by name/uuid
-    :param timeout: maximum number of seconds the discover can wait for a discovery matching requirements. if None, doesn't wait.
-    """
-    start = time.time()
-    endtime = timeout if timeout else 0
-
-    reg = re.compile(name_regex)
-
-    while True:
-        timed_out = time.time() - start > endtime
-        res = nodes.get_all()
-        if res:
-            return {
-                res.get('name'): NodeClient(n.get('name'), n.get('address'))
-                for n in res if reg.match(n.get('name'))  # filtering by regex here TODO : move that feature to the Registry
-            }  # return right away if we have something
-
-        if timed_out:
-            break
-        # else we keep looping after a short sleep ( to allow time to refresh services list )
-        time.sleep(0.2)  # sleep
-    return None
 
 
 
