@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import multiprocessing, multiprocessing.reduction
+import psutil
 import types
 import uuid
 
@@ -64,8 +65,9 @@ class Process(object):
         ProcessObserver that provide a observe interface to an already running process.
         """
 
-        def __init__(self, pid=None):  # passing pid already to prepare the psutil.Process transition...
+        def __init__(self, pid=None):
             self.started = multiprocessing.Event()
+            self._osproc = psutil.Process(pid)
 
         # TODO : inverted control flow, but in a nice way ???
         def wait_for_start(self, timeout):
@@ -77,6 +79,7 @@ class Process(object):
             """
             return self.started.is_set()
 
+    # TODO : we need to monitor a process and cleanup pid files if needed...
     class Control(Observer):
         # inheritance since there is no point to try to control without feedback,
         # and users usually expect both in same place...
@@ -84,13 +87,19 @@ class Process(object):
         ProcessControl that provide a control interface to an already running process.
         """
 
-        def __init__(self, pid=None):  # passing pid already to prepare the psutil.Process transition...
+        def __init__(self, pid=None):
             self.exit = multiprocessing.Event()
             super(Process.Control, self).__init__(pid=pid)
 
         def set_exit_flag(self):
             """Request a process termination"""
             return self.exit.set()
+
+        def monitor_registry_entry(self):
+            """ function to monitor the registry entry. Needs to be called by the update method of the parent process"""
+            # need this for a delayed cleanup in case of process termination/crash
+            if psutil.pid_exists(self._osproc.pid):
+                pid_registry.pop(self._osproc.pid)
 
     # TODO : we can extend this later (see psutil) for debugging and more...
 
@@ -149,7 +158,6 @@ class Process(object):
         #: the actual process instance. lazy creation on start() call only.
         self._process = None
         self._control = Process.Control()
-        self._observer = Process.Observer()
 
         #: whether or not the node name should be set as the actual process title
         #: replacing the string duplicated from the python interpreter run
@@ -176,7 +184,7 @@ class Process(object):
     def join(self, timeout=None):
         if not self._process:
             # blocking on started event before blocking on join
-            self._observer.started.wait(timeout=timeout)
+            self._control.started.wait(timeout=timeout)
         return self._process.join(timeout=timeout)
 
     @property
@@ -285,7 +293,7 @@ class Process(object):
 
         # timeout None means we want to wait and ensure it has started
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        return self._observer.wait_for_start(timeout=timeout)  # blocks until we know true or false
+        return self._control.wait_for_start(timeout=timeout)  # blocks until we know true or false
         # TODO: futures and ThreadPoolExecutor (so we dont need to manage our child processes ourselves...)
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
@@ -347,48 +355,54 @@ class Process(object):
 
         exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
 
-        # Initializing the required context managers
-        with pid_registry.registered(self.name, self.ident) as pcm:  # TODO : careful about reusing PIDs here...
+        try :
+            # Initializing the required context managers
+            with pid_registry.registered(self.name, self.ident) as pcm:  # TODO : careful about reusing PIDs here...
 
-            if setproctitle and self.new_title:
-                setproctitle.setproctitle("{0}".format(self.name))
+                if setproctitle and self.new_title:
+                    setproctitle.setproctitle("{0}".format(self.name))
 
-            print('[{procname}] Process started as [{pid}]'.format(procname=self.name, pid=self.ident))
+                print('[{procname}] Process started as [{pid}]'.format(procname=self.name, pid=self.ident))
 
-            with self._target_context() as cm:
+                with self._target_context() as cm:
 
-                start = time.time()
+                    start = time.time()
 
-                first_loop = True
-                # loop listening to connection
-                while not self._control.exit.is_set():
+                    first_loop = True
+                    # loop listening to connection
+                    while not self._control.exit.is_set():
 
-                    # signalling startup only the first time, just after having check for exit request.
-                    # We need to guarantee at least ONE call to update.
-                    if first_loop:
-                        self._observer.started.set()
+                        # signalling startup only the first time, just after having check for exit request.
+                        # We need to guarantee at least ONE call to update.
+                        if first_loop:
+                            self._control.started.set()
 
-                    # replacing the original Process.run() call, passing arguments to our target
-                    if self._target:
-                        # TODO : use return code to determine when/how we need to run this the next time...
-                        # Also we need to keep the exit status to be able to call external process as an update...
+                        # replacing the original Process.run() call, passing arguments to our target
+                        if self._target:
+                            # TODO : use return code to determine when/how we need to run this the next time...
+                            # Also we need to keep the exit status to be able to call external process as an update...
 
-                        logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
-                        exitstatus = self._target(*args, **kwargs)
+                            logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
+                            exitstatus = self._target(*args, **kwargs)
 
-                    if first_loop:
-                        first_loop = False
+                        if first_loop:
+                            first_loop = False
 
-                    if exitstatus is not None:
-                        break
+                        if exitstatus is not None:
+                            break
 
-                if self._observer.started.is_set() and exitstatus is None and self._control.exit.is_set():
-                    # in the not so special case where we started, we didnt get exit code and we exited,
-                    # this is expected as a normal result and we set an exitcode here of 0
-                    # As 0 is the conventional success for unix process successful run
-                    exitstatus = 0
+                    if self._observer.started.is_set() and exitstatus is None and self._control.exit.is_set():
+                        # in the not so special case where we started, we didnt get exit code and we exited,
+                        # this is expected as a normal result and we set an exitcode here of 0
+                        # As 0 is the conventional success for unix process successful run
+                        exitstatus = 0
 
-        logging.debug("[{self.name}] Process stopped.".format(**locals()))
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            raise
+        finally:
+            logging.debug("[{self.name}] Process stopped.".format(**locals()))
         return exitstatus  # returning last exit status from the update function
 
 

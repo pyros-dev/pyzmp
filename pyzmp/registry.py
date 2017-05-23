@@ -98,5 +98,6 @@ class FileBasedRegistry(collections.MutableMapping):
         yield
 
         # concealing itself
+        # Note this will not be done if the process is killed or crash...
         self.pop(name)
 

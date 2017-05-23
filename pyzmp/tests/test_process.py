@@ -300,9 +300,12 @@ class TestProc(object):
         self.testproc.terminate()
         # TODO : handle all kinds of ways to do that...
 
-        # wait until it dies
-        while self.testproc.is_alive():
-            time.sleep(1)
+        # dies immediately
+        assert self.testproc.is_alive()
+
+        # but nothing is cleaned up (finally context managers, etc. are not cleaning)
+        while "TestProcess" in pyzmp.Process.discover("Test.*"):
+            time.sleep(0.5)
 
         #TODO : wait a bit (less than gossip period) until processor is not found any more...
         print("Discovering Node...")
