@@ -8,7 +8,7 @@ from __future__ import print_function
 import os
 import sys
 import tempfile
-import multiprocessing, multiprocessing.reduction
+import multiprocessing, multiprocessing.reduction  #TODO we should probably use subprocess + psutil instead...
 import psutil
 import types
 import uuid
@@ -52,7 +52,6 @@ except ImportError:
 pid_registry = FileBasedRegistry("pid")
 
 
-# CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
 class Process(object):
     """
     Process class that model how a process is started and stopped, can start / stop child processes,
@@ -266,7 +265,7 @@ class Process(object):
         """
         Start child process
         :param timeout: the maximum time to wait for child process to report it has actually started.
-        None waits until the update has been called at least once.
+        None waits until the update is ready to be called.
         """
 
         # we lazily create our process delegate (with same arguments)
@@ -282,6 +281,7 @@ class Process(object):
 
         self._process.daemon = daemonic
 
+        # CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
         if self.is_alive():
             # if already started, we shutdown and join before restarting
             # not timeout will bock here (default join behavior).
@@ -293,8 +293,9 @@ class Process(object):
 
         # timeout None means we want to wait and ensure it has started
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        return self._control.wait_for_start(timeout=timeout)  # blocks until we know true or false
-        # TODO: futures and ThreadPoolExecutor (so we dont need to manage our child processes ourselves...)
+        if self._control.wait_for_start(timeout=timeout):  # blocks until we know true or false
+            # TODO: futures and ThreadPoolExecutor (so we dont need to manage our child processes ourselves...)
+            return self._control
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
@@ -391,7 +392,7 @@ class Process(object):
                         if exitstatus is not None:
                             break
 
-                    if self._observer.started.is_set() and exitstatus is None and self._control.exit.is_set():
+                    if self._control.started.is_set() and exitstatus is None and self._control.exit.is_set():
                         # in the not so special case where we started, we didnt get exit code and we exited,
                         # this is expected as a normal result and we set an exitcode here of 0
                         # As 0 is the conventional success for unix process successful run

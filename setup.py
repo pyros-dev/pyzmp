@@ -182,14 +182,15 @@ setuptools.setup(name='pyzmp',
         'tblib',  # this might not always install six (latest version does not)
         'six',
         'pyzmq',
-        'sqlalchemy',  # todo move this out to a different package once we can extract registry...
+        'pyyaml',
+        'psutil',
         'pytest-timeout',
         # Careful : upon install plugins can be resolved instead of core pytest package
         # => pytest should be listed last here...
-        'pytest>=2.9.1',  # since tests are embedded in package
+        'pytest>=2.5.1',  # since tests are embedded in package
     ],
     setup_requires=['pytest-runner'],
-    tests_require=['pytest>=2.9.1'],
+    tests_require=['pytest>=2.5.1'],
     cmdclass={
         'rosdevelop': RosDevelopCommand,
         'prepare_release': PrepareReleaseCommand,
