@@ -8,6 +8,11 @@ from __future__ import print_function
 import os
 import sys
 import tempfile
+if os.name == 'posix' and sys.version_info[0] < 3:
+    import subprocess32 as subprocess
+else:
+    import subprocess
+
 import multiprocessing, multiprocessing.reduction  #TODO we should probably use subprocess + psutil instead...
 import psutil
 import types
@@ -50,6 +55,82 @@ except ImportError:
 # TODO : Nodelet ( thread, with fast intraprocess zmq comm - entity system design /vs/threadpool ?)
 
 pid_registry = FileBasedRegistry("pid")
+
+
+def on_terminate(proc):
+    print("process {} terminated with exit code {}".format(proc, proc.returncode))
+
+
+class ProcessObserver(object):
+    """A ProcessObserver can observe any local running process (even if we did not launch it and are not the parent)"""
+
+    # local storage of all our child process which we are responsible for
+    _watched_pids = {}
+
+    @staticmethod
+    def monitor_all():  # TODO : maybe one per processobserver instance is easier ?
+        """ function to monitor the registry entry. Needs to be called by the update method of the parent process"""
+        # NEED this for a delayed cleanup in case of process termination/crash
+        gone_pids = [p for p in ProcessObserver._watched_pids if not psutil.pid_exists(p)]
+        for p in gone_pids:
+            pid_registry.pop(p)
+
+    def __init__(self, pid=None, infanticist=False):
+        """
+        Creates a ProcessObserver for the process matching the pid (or hte current process if pid is None).
+        If infanticist is set to true, the current process will attempt to kill this pid (his child) when dying.
+        :param pid: 
+        :param infanticist: 
+        """
+        self.infanticist = infanticist
+        self._process = psutil.Process(pid)
+        self._watched_pids[pid] = self
+
+    def monitor(self):
+        """
+        Function to monitor the registry entry for this process.
+        This needs to be called by the update method of the parent process
+        """
+        # need this for a delayed cleanup in case of process termination/crash
+        if not psutil.pid_exists(self._process.pid):
+            pid_registry.pop(self._process.pid)
+
+    def __del__(self):
+        if self.infanticist:
+            self._process.terminate()
+            gone, still_alive = psutil.wait_procs(self._process, timeout=3, callback=on_terminate)
+            for p in still_alive:
+                p.kill()
+
+
+def discover_process(name_regex='.*', timeout=None):
+    """
+    Discovers all processes.
+    Note : we do not want to make the discovery block undefinitely since we never know for sure if a process is running or not
+    TODO : improve with future...
+    :param name_regex: regex to filter the nodes by name/uuid
+    :param timeout: maximum number of seconds the discover can wait for a discovery matching requirements. if None, doesn't wait.
+    """
+    start = time.time()
+    endtime = timeout if timeout else 0
+
+    reg = re.compile(name_regex)
+
+    while True:
+        timed_out = time.time() - start > endtime
+        dp = {
+            p: ProcessObserver(pid_registry[p])
+            for p in pid_registry if reg.match(p)
+        # filtering by regex here TODO : move that feature to the Registry
+        }  # return right away if we have something
+
+        if dp:
+            return dp
+        elif timed_out:
+            break
+        # else we keep looping after a short sleep ( to allow time to refresh services list )
+        time.sleep(0.2)  # sleep
+    return None
 
 
 class Process(object):
@@ -101,36 +182,6 @@ class Process(object):
                 pid_registry.pop(self._osproc.pid)
 
     # TODO : we can extend this later (see psutil) for debugging and more...
-
-    @staticmethod
-    def discover(name_regex='.*', timeout=None):
-        """
-        Discovers all processes.
-        Note : we do not want to make the discovery block undefinitely since we never know for sure if a process is running or not
-        TODO : improve with future...
-        :param name_regex: regex to filter the nodes by name/uuid
-        :param timeout: maximum number of seconds the discover can wait for a discovery matching requirements. if None, doesn't wait.
-        """
-        start = time.time()
-        endtime = timeout if timeout else 0
-
-        reg = re.compile(name_regex)
-
-        while True:
-            timed_out = time.time() - start > endtime
-            dp = {
-                p: Process.Control(pid_registry[p])
-                for p in pid_registry if reg.match(p)
-            # filtering by regex here TODO : move that feature to the Registry
-            }  # return right away if we have something
-
-            if dp:
-                return dp
-            elif timed_out:
-                break
-            # else we keep looping after a short sleep ( to allow time to refresh services list )
-            time.sleep(0.2)  # sleep
-        return None
 
     def __init__(self, name=None, target_context=None, target_override=None, args=None, kwargs=None):
         """
@@ -294,14 +345,17 @@ class Process(object):
         # timeout None means we want to wait and ensure it has started
         # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
         if self._control.wait_for_start(timeout=timeout):  # blocks until we know true or false
-            # TODO: futures and ThreadPoolExecutor (so we dont need to manage our child processes ourselves...)
-            return self._control
+            # TODO: futures, somehow...
+            return ProcessObserver(self._process.ident)
 
     # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
     # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
 
     def terminate(self):
-        """Forcefully terminates the underlying process (using SIGTERM)"""
+        """
+        Forcefully terminates the underlying process (using SIGTERM)
+        CAREFUL : in that case the finally clauses, and context exits will NOT run.
+        """
         return self._process.terminate()
         # TODO : maybe redirect to shutdown here to avoid child process leaks ?
 
@@ -366,8 +420,6 @@ class Process(object):
                 print('[{procname}] Process started as [{pid}]'.format(procname=self.name, pid=self.ident))
 
                 with self._target_context() as cm:
-
-                    start = time.time()
 
                     first_loop = True
                     # loop listening to connection
