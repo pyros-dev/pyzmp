@@ -63,15 +63,15 @@ def on_terminate(proc):
     print("process {} terminated with exit code {}".format(proc, proc.returncode))
 
 
-class ProcessObserver(psutil.Process):
+class ProcessObserver(object):
     """A ProcessObserver can observe any local running process (even if we did not launch it and are not the parent)"""
 
     @classmethod
-    def from_pexpect(cls, pexpect_spawn):
+    def from_ptyprocess(cls, pexpect_spawn):
         # We want to use pexpect tty interactive feature to control a process
-        return cls(pid=pexpect_spawn.pid,
-                   expect_out=pexpect_spawn,
-                   expect_err=pexpect_spawn)
+        return cls(pid=ptyprocess_spawn.pid,
+                   expect_out=ptyprocess_spawn,
+                   expect_err=ptyprocess_spawn)
 
     @classmethod
     def from_subprocess(cls, subprocess_popen):
@@ -80,18 +80,13 @@ class ProcessObserver(psutil.Process):
                    expect_out=pexpect.fdpexpect.fdspawn(subprocess_popen.stdout),
                    expect_err=pexpect.fdpexpect.fdspawn(subprocess_popen.stderr))
 
-    def __init__(self, pid=None, expect_out=None, expect_err=None, out_watchers=None, err_watchers=None, async=True):
+    def __init__(self, out_watchers=None, err_watchers=None, async=True):
         """
         Creates a ProcessObserver for the process matching the pid (or the current process if pid is None).
-        :param pid: the pid to observer
-        :param expect_out: a fdpexpect object to use for blocking until certain patterns are detected.
         :param err_watcher: a list of pattern to watch for, along with the callback to call.
         :param async: On py2 will create another thread to run the err_watcher callbacks. On py3 will use corountines instead.
           Setting async to false means the monitor() method need to be called periodically in order to check for pattern in the output
         """
-        super(ProcessObserver, self).__init__(pid=pid)
-        self._expect_out = expect_out
-        self._expect_err = expect_err
 
         self._lock = threading.RLock()
         self._out_watcher = OrderedDict()
@@ -114,12 +109,34 @@ class ProcessObserver(psutil.Process):
                 Function to monitor the registry entry for this process.
                 This needs to be called by the update method of the parent process
                 """
-                while self._expect_out.isalive():
-                    self.monitor()
-            # async in python3 doesnt need a thread...
-            threading.Thread(name='monitor_'+str(pid), target=event_loop)
+                with self.monitor_context as mc:
+                    while self._expect_out.isalive() or self._expect_err.isalive():
+                        self.monitor(mc)
 
-    # TODO : maybe these need to be moved to teh Process class (direct control flow)
+            # async in python3 doesnt need a thread...
+            threading.Thread(name='threaded_eventloop', target=event_loop)
+
+
+    def attach(self, process):
+
+        self._process = psutil.Process(pid=process.pid)
+
+        # the pexpect/ptyprocess case (simpler)
+        if hasattr(process, 'read') and hasattr(process, 'write'):
+            self._expect_out = process
+            self._expect_err = process
+
+        # the more complex subprocess case (hooking onto subprocess pipes)
+        elif hasattr(process, 'stdout') and hasattr(process, 'stderr'):
+            self._expect_out = pexpect.fdpexpect.fdspawn(process.stdout)
+            self._expect_err = pexpect.fdpexpect.fdspawn(process.stderr)
+
+
+    def ppid(self):
+        """ delegating to _process """
+        return self._process.ppid()
+
+
     def expect(self, pattern_list, timeout=-1, searchwindowsize=-1, async=False):
         if self._expect_out:
             return self._expect_out.expect(pattern=pattern_list, timeout=timeout, searchwindowsize=searchwindowsize, async=async)
@@ -132,29 +149,44 @@ class ProcessObserver(psutil.Process):
         for pattern, fun in watchers.items():
             with self._lock:
                 self._err_watcher[pattern] = fun
-                self._err_cpl_pattern = self._expect_err.compile_pattern_list(self._err_watcher.keys())
+                #self._err_cpl_pattern = self._expect_err.compile_pattern_list(self._err_watcher.keys())
 
     def add_out_watcher(self, watchers):
         for pattern, fun in watchers.items():
             with self._lock:
                 self._out_watcher[pattern] = fun
-                self._out_cpl_pattern = self._expect_out.compile_pattern_list(self._out_watcher.keys())
+                #self._out_cpl_pattern = self._expect_out.compile_pattern_list(self._out_watcher.keys())
 
-    def monitor(self):
+    @contextlib.contextmanager
+    def monitor_context(self):
+        last_err_cpl = self._err_watcher.keys()
+        last_out_cpl = self._out_watcher.keys()
+        self._err_cpl_pattern = self._expect_err.compile_pattern_list(last_err_cpl)
+        self._out_cpl_pattern = self._expect_out.compile_pattern_list(last_out_cpl)
+        yield last_out_cpl, last_err_cpl
+
+    def monitor(self, monitor_context):
         """
         Function to monitor the registry entry for this process.
         This needs to be called by the update method of the parent process
         """
+
+        # if there is a change in patterns to watch, we recompile it
+        if monitor_context[1] != self._err_watcher.keys():
+            self._err_cpl_pattern = self._expect_err.compile_pattern_list(self._err_watcher.keys())
+        if monitor_context[0] != self._out_watcher.keys():
+            self._out_cpl_pattern = self._expect_out.compile_pattern_list(self._out_watcher.keys())
+
         try:
             with self._lock:
                 # TODO : make this a corountine with asyncio and python 3
-                i = self.expect(self._err_cpl_pattern, 1)
+                i = self.expect(self._err_watcher, 1)
                 if i:
                     # calling function for this pattern
                     self._err_watcher[i]()
 
                 # TODO : make this a corountine with asyncio and python 3
-                i = self.expect(self._out_cpl_pattern, 1)
+                i = self.expect(self._out_watcher, 1)
                 if i:
                     # calling function for this pattern
                     self._out_watcher[i]()
