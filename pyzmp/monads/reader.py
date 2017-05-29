@@ -89,7 +89,7 @@ class Reader(Monad):
 
     @classmethod
     def unit(cls, value):
-        return Reader(lambda _: value)
+        return cls(lambda _: value)
 
 
 def curry(fun):

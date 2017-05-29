@@ -17,7 +17,7 @@ class Applicative(Functor):
 
     def amap(self, functor_value):
         """
-        Applies the function stored in the functor to the value inside `functorValue`
+        Applies the function stored in the functor to the value inside `functor_value`
         returning a new functor value.
         """
         raise NotImplementedError

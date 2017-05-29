@@ -187,8 +187,10 @@ class First(Monoid):
         First(Nothing) otherwise.
 
         """
-        if isinstance(self.value, Just): return self
-        else: return other
+        if isinstance(self.value, Just):
+            return self
+        else:
+            return other
 
 
 class Last(Monoid):

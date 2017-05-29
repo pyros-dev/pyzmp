@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division, print_function
 
 import pyzmp.monads as monads
-from pymonad import Maybe, Just, Nothing, curry
+#from pymonad import Maybe, Just, Nothing, curry
 import pytest
 
 
@@ -32,15 +32,15 @@ import pytest
 
 import unittest
 from pyzmp.monads.maybe import Maybe, Just, First, Last, _Nothing, Nothing
+from pyzmp.monads.reader import Reader
+from pyzmp.monads.tests.monad_tester import MonadTester
+from pyzmp.monads.tests.monoid_tester import MonoidTester
 
-from pymonad.test.MonadTester import *
-from pymonad.test.MonoidTester import *
 
-
-class TestJustFunctor(unittest.TestCase, MonadTester):
+class TestJustFunctor(MonadTester):
     def __init__(self, x):
         super(TestJustFunctor, self).__init__(x)
-        self.setClassUnderTest(Just)
+        self.set_class_under_test(Just)
 
     def testFunctorLaws(self):
         self.given(8)
@@ -48,10 +48,10 @@ class TestJustFunctor(unittest.TestCase, MonadTester):
         self.ensure_second_functor_law_holds()
 
 
-class TestNothingFunctor(unittest.TestCase, MonadTester):
+class TestNothingFunctor(MonadTester):
     def __init__(self, x):
         super(TestNothingFunctor, self).__init__(x)
-        self.setClassUnderTest(_Nothing)
+        self.set_class_under_test(_Nothing)
 
     def testFunctorLaws(self):
         self.given(None)
@@ -59,10 +59,10 @@ class TestNothingFunctor(unittest.TestCase, MonadTester):
         self.ensure_second_functor_law_holds()
 
 
-class TestJustApplicative(unittest.TestCase, MonadTester):
+class TestJustApplicative(MonadTester):
     def __init__(self, x):
         super(TestJustApplicative, self).__init__(x)
-        self.setClassUnderTest(Just)
+        self.set_class_under_test(Just)
 
     def testApplicativeLaws(self):
         self.given(8)
@@ -73,10 +73,10 @@ class TestJustApplicative(unittest.TestCase, MonadTester):
         self.ensure_fifth_applicative_law_holds()
 
 
-class TestNothingApplicative(unittest.TestCase, MonadTester):
+class TestNothingApplicative(MonadTester):
     def __init__(self, x):
         super(TestNothingApplicative, self).__init__(x)
-        self.setClassUnderTest(_Nothing)
+        self.set_class_under_test(_Nothing)
 
     def testApplicativeLaws(self):
         self.given(None)
@@ -87,10 +87,10 @@ class TestNothingApplicative(unittest.TestCase, MonadTester):
         self.ensure_fifth_applicative_law_holds()
 
 
-class TestJustMonad(unittest.TestCase, MonadTester):
+class TestJustMonad(MonadTester):
     def __init__(self, x):
         super(TestJustMonad, self).__init__(x)
-        self.setClassUnderTest(Just)
+        self.set_class_under_test(Just)
 
     def monad_function_f(self, x):
         return Just(x + 10)
@@ -105,10 +105,10 @@ class TestJustMonad(unittest.TestCase, MonadTester):
         self.ensure_third_monad_law_holds()
 
 
-class TestNothingMonad(unittest.TestCase, MonadTester):
+class TestNothingMonad(MonadTester):
     def __init__(self, x):
         super(TestNothingMonad, self).__init__(x)
-        self.setClassUnderTest(_Nothing)
+        self.set_class_under_test(_Nothing)
 
     def monad_function_f(self, x):
         return Just(x + 10)
@@ -123,114 +123,114 @@ class TestNothingMonad(unittest.TestCase, MonadTester):
         self.ensure_third_monad_law_holds()
 
 
-class TestMaybeEquality(unittest.TestCase, MonadTester):
+class TestMaybeEquality(MonadTester):
     def testEqualityOfIdenticalTypes(self):
-        self.givenMonads(Just(8), Just(8))
-        self.ensureMonadsAreEqual()
+        self.given_monads(Just(8), Just(8))
+        self.ensure_monads_are_equal()
 
     def testInequalityOfIdenticalTypes(self):
-        self.givenMonads(Just(8), Just(9))
-        self.ensureMonadsAreNotEqual()
+        self.given_monads(Just(8), Just(9))
+        self.ensure_monads_are_not_equal()
 
     def testInequalityOfJustAndNothing(self):
-        self.givenMonads(Just(8), Nothing)
-        self.ensureMonadsAreNotEqual()
+        self.given_monads(Just(8), Nothing)
+        self.ensure_monads_are_not_equal()
 
     def testMonadComparisonExceptionWithJust(self):
-        self.givenMonads(Just(8), Reader(8))
-        self.ensureComparisonRaisesException()
+        self.given_monads(Just(8), Reader(8))
+        self.ensure_comparison_raises_exception()
 
     def testMonadComparisonExceptionWithNothing(self):
-        self.givenMonads(Nothing, Reader(8))
-        self.ensureComparisonRaisesException()
+        self.given_monads(Nothing, Reader(8))
+        self.ensure_comparison_raises_exception()
 
 
-class TestMaybeMonoid(unittest.TestCase, MonoidTester):
+class TestMaybeMonoid(MonoidTester):
     def test_mzero(self):
-        self.givenMonoid(Maybe)
+        self.given_monoid(Maybe)
         self.get_mzero()
         self.ensure_mzero_is(Nothing)
 
     def test_right_identity(self):
-        self.givenMonoid(Just(9))
+        self.given_monoid(Just(9))
         self.ensure_monoid_plus_zero_equals(Just(9))
 
     def test_left_identity(self):
-        self.givenMonoid(Just(9))
+        self.given_monoid(Just(9))
         self.ensure_zero_plus_monoid_equals(Just(9))
 
     def test_associativity(self):
-        self.givenMonoids(Just(1), Just(2), Just(3))
+        self.given_monoids(Just(1), Just(2), Just(3))
         self.ensure_associativity()
 
     def test_mplus_with_two_just_values(self):
-        self.givenMonoids(Just(1), Just(2))
+        self.given_monoids(Just(1), Just(2))
         self.ensure_mconcat_equals(Just(3))
 
     def test_mplus_with_one_just_and_one_nothing(self):
-        self.givenMonoids(Just(1), Nothing)
+        self.given_monoids(Just(1), Nothing)
         self.ensure_mconcat_equals(Just(1))
 
 
-class TestFirstMonoid(unittest.TestCase, MonoidTester):
+class TestFirstMonoid(MonoidTester):
     def test_mzero(self):
-        self.givenMonoid(First)
+        self.given_monoid(First)
         self.get_mzero()
         self.ensure_mzero_is(First(Nothing))
 
     def test_right_identity(self):
-        self.givenMonoid(First(Just(9)))
+        self.given_monoid(First(Just(9)))
         self.ensure_monoid_plus_zero_equals(First(Just(9)))
 
     def test_left_identity(self):
-        self.givenMonoid(First(Just(9)))
+        self.given_monoid(First(Just(9)))
         self.ensure_zero_plus_monoid_equals(First(Just(9)))
 
     def test_associativity(self):
-        self.givenMonoids(First(Just(1)), First(Just(2)), First(Just(3)))
+        self.given_monoids(First(Just(1)), First(Just(2)), First(Just(3)))
         self.ensure_associativity()
 
     def test_mplus_with_two_just_values(self):
-        self.givenMonoids(First(Just(1)), First(Just(2)))
+        self.given_monoids(First(Just(1)), First(Just(2)))
         self.ensure_mconcat_equals(First(Just(1)))
 
     def test_mplus_with_just_and_nothing(self):
-        self.givenMonoids(First(Just(1)), Nothing)
+        self.given_monoids(First(Just(1)), Nothing)
         self.ensure_mconcat_equals(First(Just(1)))
 
     def test_mplus_with_nothing_and_just(self):
-        self.givenMonoids(Nothing, First(Just(1)))
+        self.given_monoids(Nothing, First(Just(1)))
         self.ensure_mconcat_equals(First(Just(1)))
 
 
-class TestLastMonoid(unittest.TestCase, MonoidTester):
+class TestLastMonoid(MonoidTester):
     def test_mzero(self):
-        self.givenMonoid(Last)
+        self.given_monoid(Last)
         self.get_mzero()
         self.ensure_mzero_is(Last(Nothing))
 
     def test_right_identity(self):
-        self.givenMonoid(Last(Just(9)))
+        self.given_monoid(Last(Just(9)))
         self.ensure_monoid_plus_zero_equals(Last(Just(9)))
 
     def test_left_identity(self):
-        self.givenMonoid(Last(Just(9)))
+        self.given_monoid(Last(Just(9)))
         self.ensure_zero_plus_monoid_equals(Last(Just(9)))
 
     def test_associativity(self):
-        self.givenMonoids(Last(Just(1)), Last(Just(2)), Last(Just(3)))
+        self.given_monoids(Last(Just(1)), Last(Just(2)), Last(Just(3)))
         self.ensure_associativity()
 
     def test_mplus_with_two_just_values(self):
-        self.givenMonoids(Last(Just(1)), Last(Just(2)))
+        self.given_monoids(Last(Just(1)), Last(Just(2)))
         self.ensure_mconcat_equals(Last(Just(2)))
 
     def test_mplus_with_just_and_nothing(self):
-        self.givenMonoids(Last(Just(1)), Nothing)
+        self.given_monoids(Last(Just(1)), Nothing)
         self.ensure_mconcat_equals(Last(Just(1)))
 
     def test_mplus_with_nothing_and_just(self):
-        self.givenMonoids(Nothing, Last(Just(1)))
+        self.given_monoids(Nothing, Last(Just(1)))
         self.ensure_mconcat_equals(Last(Just(1)))
 
 if __name__ == "__main__":

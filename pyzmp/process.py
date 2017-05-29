@@ -13,7 +13,7 @@ if os.name == 'posix' and sys.version_info[0] < 3:
 else:
     import subprocess
 
-import multiprocessing, multiprocessing.reduction  #TODO we should probably use subprocess + psutil instead...
+import multiprocessing, multiprocessing.reduction  # TODO we should probably use subprocess + psutil instead...
 import psutil
 import types
 import uuid

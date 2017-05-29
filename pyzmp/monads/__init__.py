@@ -16,12 +16,12 @@ working for python 2.7 (and py3) will be found.
 
 from .monad import Monad, do, mreturn, done, fid
 from .maybe import Maybe, Just, Nothing
-from .statechanger import StateChanger, get_state, change_state
-from .continuation import Continuation, callcc
+from .state import State
+from .continuation import Continuation#, callcc
 
 __all__ = [
     'Monad', 'do', 'mreturn', 'done', 'fid',
     'Maybe', 'Just', 'Nothing',
     'StateChanger', 'get_state', 'change_state',
-    'Continuation', 'callcc'
+    'Continuation', #'callcc'
 ]

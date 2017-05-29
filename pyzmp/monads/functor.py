@@ -40,6 +40,6 @@ class Functor(Container):
         raise NotImplementedError
 
 
-def unit(aClass, value):
-    """ Calls the 'unit' method of 'aClass' with 'value'.  """
-    return aClass.unit(value)
+def unit(cls, value):
+    """ Calls the 'unit' method of 'cls' with 'value'.  """
+    return cls.unit(value)
