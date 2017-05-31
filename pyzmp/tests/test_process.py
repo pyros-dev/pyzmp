@@ -69,7 +69,7 @@ def test_process_double_creation_termination():
     """Checks that a node can be started twice and shutdown and indicate that it ran successfully"""
     n1 = pyzmp.Process()
     assert not n1.is_alive()
-    svc_url1 =n1.start()
+    svc_url1 = n1.start()
     assert n1.is_alive()
     assert svc_url1
     svc_url2 = n1.start()  # this shuts down properly and restart the node
