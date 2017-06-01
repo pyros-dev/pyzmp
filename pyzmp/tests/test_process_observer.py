@@ -14,12 +14,9 @@ else:
 import psutil
 import ptyprocess
 import pexpect.popen_spawn
-from pyzmp.process_observer import ProcessObserver
+from pyzmp.process_observer import ProcessWatcher
 
 # Here we test basic process observer behavior, with a bunch of different ways to start and control a process
-
-
-
 
 
 class TestSubprocessObserver(object):
@@ -36,7 +33,7 @@ class TestSubprocessObserver(object):
         if hasattr(self, 'testobserver'):
             self.testobserver = None
 
-    def test_start_once(self):
+    def test_start_once_detect(self):
         # setup the event to be able to come back from the callback (potentially in another thread)
         detected = threading.Event()
 
@@ -44,19 +41,20 @@ class TestSubprocessObserver(object):
             detected.set()
 
         # setup the observer
-        self.testobserver = ProcessObserver(out_watchers={
+        self.testobserver = ProcessWatcher(out_watchers={
             'test_string': set_detected
         })
 
-        # start the process
-        self.testproc = subprocess.Popen(["/bin/echo", "test_string"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-        self.testobserver.attach(self.testproc)
-
-        # basic checks
-        assert self.testobserver.ppid() == os.getpid()
+        # start the process, using watcher buffered pipes.
+        self.testproc = subprocess.Popen(["/bin/echo", "test_string"], stdin=self.testobserver.pty_master, stdout=self.testobserver.pty_slave, stderr=subprocess.STDOUT, start_new_session=True)
+        # this does not last long enough for attach to grab anything.
+        #self.testobserver.attach(self.testproc)
 
         # check that we get some output
         assert detected.wait(timeout=5)
+
+        # basic checks
+        assert self.testobserver.ppid() == os.getpid()
 
     def test_start_once_crash(self):
         # setup the event to be able to come back from the callback (potentially in another thread)

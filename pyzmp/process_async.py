@@ -54,6 +54,7 @@ class ProcessAsync(object):
         self._target_context = target_context or self.target_context  # TODO: extend to list if possible ( available for python >3.1 only )
         super(ProcessAsync, self).__init__()
 
+    @asyncio.corountine()
     await def start(self, timeout=None):
         """
         Start child process

@@ -33,7 +33,7 @@ class Continuation(Monad):
         r"""Chain continuation passing functions.
         Haskell: m >>= k = Cont $ \c -> runCont m $ \a -> runCont (k a) c
         """
-        return Continuation(lambda cont: self(lambda x: fun(x).run(cont)))
+        return Continuation(lambda cont: self(lambda x: fun(x)(cont)))
 
     def fmap(self, fn):
         """Map a function over a continuation.
@@ -42,7 +42,8 @@ class Continuation(Monad):
         return Continuation(lambda c: self(compose(c, fn)))
 
     def amap(self, functor_value):
-        return Continuation(lambda c: functor_value(self(c)))
+        """ """
+        return self.value << functor_value  # Continuation(lambda fn: compose(functor_value, self)(fn))
 
     def __call__(self, *args, **kwargs):
         return self.value(*args) if args else self.value
@@ -66,5 +67,5 @@ def call_cc(fn):
     r"""call-with-current-continuation.
     Haskell: callCC f = Cont $ \c -> runCont (f (\a -> Cont $ \_ -> c a )) c
     """
-    return Continuation(lambda c: fn(lambda a: Continuation(lambda _: c(a))).run(c))
+    return Continuation(lambda c: fn(lambda a: Continuation(lambda _: c(a)))(c))
 
