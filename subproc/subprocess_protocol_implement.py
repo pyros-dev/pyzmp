@@ -1,3 +1,4 @@
+import os
 import re
 import signal
 
@@ -21,7 +22,7 @@ TODO : compatibility with those, eventually
 """
 
 
-from .subprocess_protocol import STARTED, SHUTDOWN
+from .subprocess_protocol import STARTED_FMT, SHUTDOWN_FMT
 
 
 class SubprocessProtocolImplement(object):
@@ -68,7 +69,7 @@ class SubprocessProtocolImplement(object):
     def started_event(self):
         """Needs to be called after startup, once all initialization has been done.
         """
-        self.logger.info(STARTED)
+        self.logger.info(STARTED_FMT.format(pid=os.getpid()))
 
     def shutdown_event(self, exit_code):
         """Needs to be called before shutdown, before cleaning up.
@@ -79,7 +80,7 @@ class SubprocessProtocolImplement(object):
                     exit_code = s.name
                     break  # we found it and changed exit_code to str.
 
-        self.logger.info(SHUTDOWN.format(exit_code=exit_code))
+        self.logger.info(SHUTDOWN_FMT.format(exit_code=exit_code))
 
 
 

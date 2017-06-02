@@ -20,8 +20,10 @@ TODO : compatibility with those, eventually
 
 """
 
-STARTED = "-STARTED-"  # regex to detect startup
-SHUTDOWN = "-SHUTDOWN {exit_code}-"  # regex to detect shutdown
+STARTED_FMT = "-STARTED {pid}-"  # string to denote startup
+STARTED_REGEX = ".*-STARTED (.+?)-"  # regex to extract pid
+SHUTDOWN_FMT = "-SHUTDOWN {exit_code}-"  # string to denote shutdown
+SHUTDOWN_REGEX = ".*-SHUTDOWN (.+?)-"  # regex to extract exit code
 
 
 class SubprocessProtocol(asyncio.SubprocessProtocol):
@@ -104,16 +106,18 @@ class SubprocessProtocol(asyncio.SubprocessProtocol):
 
         self.output.extend(data)
 
-        if not self.available and STARTED in data:  # startup sequence has finished
+        if not self.available and re.match(STARTED_REGEX, data):  # startup sequence has finished
             self.available = True
+            pid = self.extract_pid(data)  # CAREFUL with intermediary processes (shells especially), and how they forward signals...
             asyncio.run_coroutine_threadsafe(self.on_started(), self.loop)
         # elif data.endswith("STOPPED"):  # process has been stopped (received SIGSTOP / Ctrl^Z)
         #
         # elif data.endswith("RESUMED"):  # process has been stopped (received SIGCONT)
 
-        if self.available and SHUTDOWN in data:  # shutdown sequence has been initiated. (received SIGTERM)
+        if self.available and re.match(SHUTDOWN_REGEX, data):  # shutdown sequence has been initiated. (received SIGTERM or normal shutdown)
             # CAREFUL : by design, this is an optimization and should not be necessary for the system to keep working.
-            asyncio.run_coroutine_threadsafe(self.on_shutdown(), self.loop)
+            exit_code = self.extract_exit_code(data)  # => other processes must not rely on exit code. Required messages must be propagated at a higher level...
+            asyncio.run_coroutine_threadsafe(self.on_shutdown(exit_code), self.loop)
             self.available = False
 
     @asyncio.coroutine
@@ -135,6 +139,21 @@ class SubprocessProtocol(asyncio.SubprocessProtocol):
     @asyncio.coroutine
     def on_exited(self):
         raise NotImplemented
+
+    def extract_pid(self, started_str):
+        try:
+            pid = re.search(STARTED_REGEX, started_str).group(1)
+            return pid
+        except AttributeError:
+            return None
+
+    def extract_exit_code(self, shutdown_str):
+        try:
+            exit_code = re.search(SHUTDOWN_REGEX, shutdown_str).group(1)
+            return exit_code
+        except AttributeError:
+            return None
+
 
     def pipe_connection_lost(self, fd, exc):
         """Called when a file descriptor associated with the child process is
