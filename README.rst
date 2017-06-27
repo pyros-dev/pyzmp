@@ -17,7 +17,7 @@ PyZMP
       -  **Indigo** |ros_indigo_pkg| **Jade** |ros_jade_pkg| **Kinetic** |ros_kinetic_pkg|
 
 .. |docs| image:: https://readthedocs.org/projects/pyzmp/badge/?style=flat
-    :target: https://readthedocs.org/projects/pytzmp
+    :target: https://readthedocs.org/projects/pyzmp
     :alt: Documentation Status
 
 .. |travis| image:: https://travis-ci.org/asmodehn/pyzmp.svg?branch=master
