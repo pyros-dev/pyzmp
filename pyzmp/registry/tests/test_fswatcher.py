@@ -9,98 +9,38 @@ import pytest
 import time
 import yaml
 
-from pyzmp.registry._entry import ROEntry, RWEntry, ROFileEntry, RWFileEntry, EntryFactory
+from pyzmp.registry._fswatcher import UniqueFilePath, WatchedFile, FileEventHandler, FileWatcher
 
 
-class TestROEntry(unittest.TestCase):
-    """
-    Simple classical unittest test case of ROEntry
-    """
-    def setUp(self):
-        self.entry = ROEntry({'key': 'value'})
+def test_uniquefilepath_symlink_equal(tmpdir):
+    test_dir = tmpdir.join('test_dir')
+    test_dir.mkdir()
 
-    def test_len(self):
-        assert len(self.entry) == 1
+    sym_dir = tmpdir.join('symdir_dir')
+    sym_dir.mksymlinkto(test_dir)
 
-    def test_iter(self):
-        assert 'key' in self.entry
+    # verifying they are considered equal
+    fp1 = UniqueFilePath(str(test_dir))
+    fp2 = UniqueFilePath(str(sym_dir))
+    assert fp1 == fp2
 
-    def test_getitem(self):
-        assert self.entry['key'] == 'value'
-
-    def test_setitem(self):
-        with self.assertRaises(TypeError):
-            self.entry['key'] = 'override'
-
-    def test_delitem(self):
-        with self.assertRaises(TypeError):
-            del self.entry['key']
-
-
-class TestRWEntry(unittest.TestCase):
-    """
-    Simple classical unittest test case of RWEntry
-    """
-    def setUp(self):
-        self.entry = RWEntry({'key': 'value'})
-        self.entry.filedump = lambda: None  # we define it to avoid raising NotImplementedError
-
-    def test_len(self):
-        assert len(self.entry) == 1
-
-    def test_iter(self):
-        assert 'key' in self.entry
-
-    def test_getitem(self):
-        assert self.entry['key'] == 'value'
-
-    def test_setitem(self):
-        self.entry['key'] = 'override'
-        assert self.entry['key'] == 'override'
-
-    def test_delitem(self):
-        del self.entry['key']
-        assert 'key' not in self.entry
+    # verifying they are considered the same element.
+    settest = set()
+    settest.add(fp1)
+    settest.add(fp2)
+    assert len(settest) == 1
 
 
 @pytest.fixture
-def entry_factory(tmpdir):
+def watched_directory(tmpdir):
     tmpdir.chdir()
     # somehow we cannot create multiple nested folders here...
-    entry_path = tmpdir.join('domain_host')
-    # actually forcing directory creation (tmpdir is lazy)
-    entry_path.mkdir()
-    return EntryFactory(str(entry_path))
+    watched_path = tmpdir.join('watched_directory')
+    watched_path.mkdir()
+    return FileEventHandler(str(watched_path))
 
 
-def test_handler_watched_create_dir(entry_factory):
-
-    # hack for py2 (py3 has actual nonlocal statement)
-    class Nonlocal:
-        pass
-
-    Nonlocal.creation_detected = False
-
-    def created():
-        Nonlocal.creation_detected = True
-
-    entry = entry_factory.watch('test_create_path', on_created=created)
-
-    p = os.path.join(entry_factory.path, 'test_create_path')
-    assert Nonlocal.creation_detected is False
-
-    print(entry.filepath)
-    os.makedirs(entry.filepath)
-
-    now = time.time()
-    while time.time() - now < 300:
-        if Nonlocal.creation_detected:
-            break
-
-    assert Nonlocal.creation_detected
-
-
-def test_handler_watched_create_file(entry_factory):
+def test_handler_watched_create_dir(watched_directory):
 
     # hack for py2 (py3 has actual nonlocal statement)
     class Nonlocal:
@@ -111,21 +51,51 @@ def test_handler_watched_create_file(entry_factory):
     def created():
         Nonlocal.creation_detected = True
 
-    entry = entry_factory.watch('test_create_file', on_created=created)
+    #wp = os.path.join(watched_directory.base_path, "watched_subdir")
+    #entry_path.write("{'answer': 42}")
 
-    p = os.path.join(entry_factory.path, 'test_create_file')
+    wd = watched_directory.watch('watched_subdir', on_created=created)
+
     assert Nonlocal.creation_detected is False
 
-    print(entry.filepath)
-    with open(entry.filepath, 'a'):
-        os.utime(entry.filepath, None)
+    with FileWatcher(watched_directory):
+        # actually forcing creation (tmpdir is lazy)
+        os.makedirs(wd.filepath)
 
-    now = time.time()
-    while time.time() - now < 300:
-        if Nonlocal.creation_detected:
-            break
+        now = time.time()
+        while time.time() - now < 300:
+            if Nonlocal.creation_detected:
+                break
 
-    assert Nonlocal.creation_detected
+        assert Nonlocal.creation_detected
+#
+#
+# def test_handler_watched_create_file(entry_factory):
+#
+#     # hack for py2 (py3 has actual nonlocal statement)
+#     class Nonlocal:
+#         pass
+#
+#     Nonlocal.creation_detected = False
+#
+#     def created():
+#         Nonlocal.creation_detected = True
+#
+#     entry = entry_factory.watch('test_create_file', on_created=created)
+#
+#     p = os.path.join(entry_factory.path, 'test_create_file')
+#     assert Nonlocal.creation_detected is False
+#
+#     print(entry.filepath)
+#     with open(entry.filepath, 'a'):
+#         os.utime(entry.filepath, None)
+#
+#     now = time.time()
+#     while time.time() - now < 300:
+#         if Nonlocal.creation_detected:
+#             break
+#
+#     assert Nonlocal.creation_detected
 
 
 
