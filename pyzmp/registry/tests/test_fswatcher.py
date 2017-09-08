@@ -59,7 +59,6 @@ def test_handler_watched_create_dir(watched_directory):
     assert Nonlocal.creation_detected is False
 
     with FileWatcher(watched_directory):
-        # actually forcing creation (tmpdir is lazy)
         os.makedirs(wd.filepath)
 
         now = time.time()
@@ -68,37 +67,37 @@ def test_handler_watched_create_dir(watched_directory):
                 break
 
         assert Nonlocal.creation_detected
-#
-#
-# def test_handler_watched_create_file(entry_factory):
-#
-#     # hack for py2 (py3 has actual nonlocal statement)
-#     class Nonlocal:
-#         pass
-#
-#     Nonlocal.creation_detected = False
-#
-#     def created():
-#         Nonlocal.creation_detected = True
-#
-#     entry = entry_factory.watch('test_create_file', on_created=created)
-#
-#     p = os.path.join(entry_factory.path, 'test_create_file')
-#     assert Nonlocal.creation_detected is False
-#
-#     print(entry.filepath)
-#     with open(entry.filepath, 'a'):
-#         os.utime(entry.filepath, None)
-#
-#     now = time.time()
-#     while time.time() - now < 300:
-#         if Nonlocal.creation_detected:
-#             break
-#
-#     assert Nonlocal.creation_detected
 
 
+def test_handler_watched_create_file(watched_directory):
 
+    # hack for py2 (py3 has actual nonlocal statement)
+    class Nonlocal:
+        pass
+
+    Nonlocal.creation_detected = False
+
+    def created():
+        Nonlocal.creation_detected = True
+
+    wf = watched_directory.watch('watched_file', on_created=created)
+
+    assert Nonlocal.creation_detected is False
+
+    with FileWatcher(watched_directory):
+        # actually forcing creation (tmpdir is lazy)
+        with open(wf.filepath, 'w') as fh:
+            fh.write("{'answer': 42}")
+
+        now = time.time()
+        while time.time() - now < 300:
+            if Nonlocal.creation_detected:
+                break
+
+        assert Nonlocal.creation_detected
+
+
+# TODO
 # def test_handler_delete():
 #     pass
 #
@@ -108,20 +107,7 @@ def test_handler_watched_create_dir(watched_directory):
 # def test_handler_modify():
 #     pass
 #
-#
-# def test_handler_create_conflict():
-#     pass
-#
-# def test_handler_delete_conflict():
-#     pass
-#
-# def test_handler_move_conflict():
-#     pass
-#
-# def test_handler_modify_conflict():
-#     pass
-#
-#
+
 # @pytest.fixture
 # def ro_fileentry(fileentry):
 #     import yaml

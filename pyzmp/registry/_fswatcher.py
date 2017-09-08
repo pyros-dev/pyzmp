@@ -16,6 +16,11 @@ import collections
 import yaml
 import errno
 
+"""
+Module containing classes to be notified of file system events
+And plug some custom behavior on any filepath, on any event. 
+"""
+
 
 class UniqueFilePath:
     __slots__ = [
@@ -55,6 +60,12 @@ class WatchedFile(UniqueFilePath):
         if on_deleted:
             self.on_instance_deleted = on_deleted
 
+    def __del__(self):
+        self.on_instance_created = None
+        self.on_instance_modified = None
+        self.on_instance_moved = None
+        self.on_instance_deleted = None
+
     def on_created(self):
         if callable(self.on_instance_created):
             self.on_instance_created()
@@ -78,6 +89,8 @@ class WatchedFile(UniqueFilePath):
             self.on_instance_deleted()
         else:
             pass
+
+# TODO class Owned File ??????
 
 
 class FileEventHandler(watchdog.events.FileSystemEventHandler):
@@ -151,8 +164,8 @@ class FileWatcher(object):
 
     def __exit__(self, exception_type, exception_value, traceback):
         self.observer.stop()
-
-    def __del__(self):
         self.observer.join()
+        assert not self.observer.is_alive()
+
 
 

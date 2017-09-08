@@ -10,13 +10,24 @@ import tempfile
 import abc
 
 import sys
+
+import time
 import watchdog.events
 import watchdog.observers
 import collections
 import yaml
 import errno
 
-from ._fswatcher import WatchedFile
+from ._fswatcher import WatchedFile, FileEventHandler, FileWatcher
+
+"""
+Module containing classes to aggregate information from a filesystem
+into a mapping, that can be modified directly, but also get notified
+of change happening underneath (not triggered by our process)...
+
+The file content has to be a YAML mapping.
+"""
+
 
 # Used to override the default tmp directory (for tests for example)
 tmpdir = None
@@ -72,8 +83,14 @@ class RWEntry(ROEntry, collections.MutableMapping):
         :param kwargs: making multiple inheritance simple
         """
         super(RWEntry, self).__init__(data)
+        # to force file creation asap (direct control flow)
+        self.filedump()
 
-    def filedump(self):
+    def __del__(self):
+        # to force file deletion
+        self.filedump(remove=True)
+
+    def filedump(self, remove=False):
         raise NotImplementedError
 
     def __setitem__(self, key, value):
@@ -83,7 +100,6 @@ class RWEntry(ROEntry, collections.MutableMapping):
     def __delitem__(self, key):
         del self._data[key]
         self.filedump()
-
 
 
 class ROFileEntry(WatchedFile, ROEntry):
@@ -108,8 +124,8 @@ class ROFileEntry(WatchedFile, ROEntry):
     def fileload(self):
         # Also supporting the directory case somehow... maybe not a good idea ?
         if os.path.isfile(self.filepath):
-            with open(self.filepath, "r") as fh:
-                self._data = yaml.load(fh)
+                with open(self.filepath, "r") as fh:
+                    self._data = yaml.load(fh)
         elif os.path.isdir(self.filepath):
             self._data[os.path.basename(self.filepath)] = {}
         else:
@@ -152,7 +168,7 @@ class ROFileEntry(WatchedFile, ROEntry):
 class RWFileEntry(WatchedFile, RWEntry):
     """
     Class representing one Read/Write entry (file) in the registry
-    This process is supposed to be the only one allowed to create/modify/delete it.
+    The current process is supposed to be the only one allowed to create/modify/delete it.
     """
     def __init__(self, filepath, on_created=None, on_modified=None, on_moved=None, on_deleted=None):  # TODO : on_create=on_create, on_modify=on_modify, on_delete=on_delete, on_move=on_move
         # a member to indicate if a conflict has been detected for this FileEntry
@@ -166,20 +182,41 @@ class RWFileEntry(WatchedFile, RWEntry):
         self.expected_move = 0
         self.expected_delete = 0
 
+        # : the number of conflicts last time we overwrote the data
+        # So we should be safe to go after that if the number of conflict doesnt increase
+        self.last_conflicts = 0
+
         # We don't use super, since we need to init multiple base classes
         WatchedFile.__init__(
             self,
             filepath=filepath,
             on_created=on_created, on_modified=on_modified, on_moved=on_moved, on_deleted=on_deleted
         )
+        self.expected_create += 1
         RWEntry.__init__(
             self,
             data={}
         )
 
-    def filedump(self):
-        with open(self.filepath, "w", encoding='utf8') as fh:
-            yaml.dump(self._data, fh, default_flow_style=False, allow_unicode=True)
+    def __del__(self):
+        # preventing late conflict in case somebody checks
+        self.expected_delete += 1
+        RWEntry.__del__(self)
+        WatchedFile.__del__(self)
+
+    def fileload(self):
+        if self.conflicts <= self.last_conflicts:
+            super(RWFileEntry, self).fileload()
+        else:
+            raise EntryConflict("Conflict has been detected on {0}, preventing loading from file.".format(self.filepath))
+
+    def filedump(self, remove=False):
+        self.last_conflicts = self.conflicts  # memorizing the past conflicts before overriding
+        if remove:
+            os.remove(self.filepath)
+        else:
+            with open(self.filepath, "w", encoding='utf8') as fh:
+                yaml.dump(self._data, fh, default_flow_style=False, allow_unicode=True)
 
     def __setitem__(self, key, value):
         self.expected_modify += 1
@@ -193,104 +230,130 @@ class RWFileEntry(WatchedFile, RWEntry):
         self.expected_create -= 1
         if self.expected_create < 0:
             self.unexpected_create += 1
-        super(RWFileEntry, self).on_instance_created()
+        super(RWFileEntry, self).on_created()
 
     def on_modified(self):
         self.expected_modify -= 1
         if self.expected_modify < 0:
             self.unexpected_modify += 1
-        super(RWFileEntry, self).on_instance_modified()
+        super(RWFileEntry, self).on_modified()
 
     def on_moved(self):
         self.expected_move -= 1
         if self.expected_move < 0:
             self.unexpected_move += 1
-        super(RWFileEntry, self).on_instance_moved()
+        super(RWFileEntry, self).on_moved()
 
     def on_deleted(self):
         self.expected_delete -= 1
         if self.expected_delete < 0:
             self.unexpected_delete += 1
-        super(RWFileEntry, self).on_instance_deleted()
+        super(RWFileEntry, self).on_deleted()
         # after delete we have no data available
         self._data = {}
 
     @property
-    def conflict(self):
-        return self.unexpected_create or self.unexpected_modify or self.unexpected_move or self.unexpected_delete
+    def conflicts(self):
+        return self.unexpected_create + self.unexpected_modify + self.unexpected_move + self.unexpected_delete
 
 
-class EntryFactory(watchdog.events.FileSystemEventHandler):
+class EntryFactory(FileEventHandler, FileWatcher):
     """
     An Event Handler for a set of entries
     """
     def __init__(self, path):
-        self.path = path
-        self.watched = {}  # all entries/files we know about
-
-        # Can also be in another class/instance
-        self.observer = watchdog.observers.Observer()
-        self.observer.schedule(self, path, recursive=True)
-        self.observer.start()
-
-    # TODO : context manager instead ?
-    def __del__(self):
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
+        super(EntryFactory, self).__init__(base_path=path)
 
     # direct control flow
-    def create(self, relpath):
+    def create(self, relpath, on_created=None, on_deleted=None, on_modified=None, on_moved=None):
         """
         Watching this entry means that any event that has not been granted before will trigger a conflict marker
         An entry marked with a conflict means that an unexpected event occured -> data cannot be trusted anymore.
         :param entry:
         :return:
         """
-        fullpath = os.path.join(self.path, relpath)
-        entry = RWFileEntry(filepath=fullpath)
+        resolved = os.path.join(self.base_path, relpath)
+        self.watched[relpath] = RWFileEntry(
+            filepath=os.path.realpath(resolved),
+            on_created=on_created,
+            on_modified=on_modified,
+            on_deleted=on_deleted,
+            on_moved=on_moved
+        )
 
-        return entry
+        # TODO : in fswatcher instead ???
+        # enforcing direct control flow
+        # This has to be outside of __init__ to be able to receive the callback...
+        while self.watched[relpath].expected_create > 0:
+            time.sleep(.1)
 
-    def watch(self, relpath, on_created=None, on_deleted=None, on_modified=None, on_moved=None):
-        """
-        Watching this entry means that any event that has not been granted before will trigger a conflict marker
-        An entry marked with a conflict means that an unexpected event occurred -> data cannot be trusted anymore.
-        :param relpath: relative path of the entry to watch
-        :return:
-        """
-        fullpath = os.path.join(self.path, relpath)
-        entry = ROFileEntry(filepath=fullpath,
-                            on_created=on_created,
-                            on_modified=on_modified,
-                            on_deleted=on_deleted,
-                            on_moved=on_moved)
+        # TODO raise exception if creation didn't happen with warning:
+        # => everything is likely broken, just give up already.
 
-        self.watched[entry.filepath] = entry
+        return self.watched[relpath]
 
-        return entry
+    def destroy(self, relpath):
+        # TODO : in fswatcher instead ???
+        # explicit resource (file/entry) management
+        # enforcing direct control flow
+        p = self.watched[relpath]
+        self.watched.pop(relpath)
+        while p.expected_delete > 0:
+            time.sleep(.1)
 
     # inverted control flow
+    def expect(self, relpath, on_created=None, on_deleted=None, on_modified=None, on_moved=None):
+        """
+        Watching this entry means that any event that has not been granted before will trigger a conflict marker
+        An entry marked with a conflict means that an unexpected event occured -> data cannot be trusted anymore.
+        :param entry:
+        :return:
+        """
+        resolved = os.path.join(self.base_path, relpath)
+        self.watched[relpath] = ROFileEntry(
+            filepath=os.path.realpath(resolved),
+            on_created=on_created,
+            on_modified=on_modified,
+            on_deleted=on_deleted,
+            on_moved=on_moved
+        )
+
+        # indirect control flow
+
+        return self.watched[relpath]
+
     def on_any_event(self, event):
         print(event)
 
     def on_moved(self, event):
-        e = self.watched.get(event.src_path)
-        if e is not None:
-            e.on_moved()
+        # TODO : check for ambiguity (symlinks ?)
+        if event.src_path == self.base_path:
+            # moving this directory ?!?!!?
+            pass
+        super(EntryFactory, self).on_moved(event)
 
     def on_created(self, event):
-        e = self.watched.get(event.src_path)
-        if e is not None:
-            e.on_created()
+        # TODO : check for ambiguity (symlinks ?)
+        if event.src_path == self.base_path:
+            # creating this directory ?!?!!?
+            pass
+        super(EntryFactory, self).on_created(event)
 
     def on_deleted(self, event):
-        e = self.watched.get(event.src_path)
-        if e is not None:
-            e.on_deleted()
+        # TODO : check for ambiguity (symlinks ?)
+        if event.src_path == self.base_path:
+            # deleting this directory ?!?!!?
+            pass
+        super(EntryFactory, self).on_deleted(event)
 
     def on_modified(self, event):
-        """ triggered when the current directory is modified """
-        e = self.watched.get(event.src_path)
-        if e is not None:
-            e.on_modified()
+        # TODO : check for ambiguity (symlinks ?)
+        if event.src_path == self.base_path:
+            # modifying this directory ?!?!!?
+            # TODO : maybe we need to handle something ?
+            pass
+        super(EntryFactory, self).on_modified(event)
+
+
+class EntryWatcher(FileWatcher):
+    pass

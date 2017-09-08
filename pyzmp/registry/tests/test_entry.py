@@ -9,7 +9,7 @@ import pytest
 import time
 import yaml
 
-from pyzmp.registry._entry import ROEntry, RWEntry, ROFileEntry, RWFileEntry, EntryFactory
+from pyzmp.registry._entry import ROEntry, RWEntry, ROFileEntry, RWFileEntry, EntryFactory, EntryWatcher
 
 
 class TestROEntry(unittest.TestCase):
@@ -42,8 +42,11 @@ class TestRWEntry(unittest.TestCase):
     Simple classical unittest test case of RWEntry
     """
     def setUp(self):
+        # we define it to avoid raising NotImplementedError
+        def fakedump(self, remove=False):
+            pass
+        RWEntry.filedump = fakedump
         self.entry = RWEntry({'key': 'value'})
-        self.entry.filedump = lambda: None  # we define it to avoid raising NotImplementedError
 
     def test_len(self):
         assert len(self.entry) == 1
@@ -73,84 +76,131 @@ def entry_factory(tmpdir):
     return EntryFactory(str(entry_path))
 
 
-def test_handler_watched_create_dir(entry_factory):
-
+def test_yaml_rw_entry(entry_factory):
     # hack for py2 (py3 has actual nonlocal statement)
     class Nonlocal:
         pass
 
     Nonlocal.creation_detected = False
+    Nonlocal.move_detected = False
+    Nonlocal.modification_detected = False
+    Nonlocal.deletion_detected = False
 
     def created():
         Nonlocal.creation_detected = True
 
-    entry = entry_factory.watch('test_create_path', on_created=created)
+    def moved():
+        Nonlocal.move_detected = True
 
-    p = os.path.join(entry_factory.path, 'test_create_path')
-    assert Nonlocal.creation_detected is False
+    def modified():
+        Nonlocal.modification_detected = True
 
-    print(entry.filepath)
-    os.makedirs(entry.filepath)
+    def deleted():
+        Nonlocal.deletion_detected = True
 
-    now = time.time()
-    while time.time() - now < 300:
-        if Nonlocal.creation_detected:
-            break
+    with EntryWatcher(entry_factory):
 
-    assert Nonlocal.creation_detected
+        time.sleep(1)
+        
+        # direct control flow
+        rwentry = entry_factory.create('rw_entry.yaml', on_created=created, on_moved=moved, on_modified=modified, on_deleted=deleted)
 
 
-def test_handler_watched_create_file(entry_factory):
+        return
 
+        while not Nonlocal.creation_detected:
+            time.sleep(1)
+        assert Nonlocal.creation_detected
+
+
+        # direct control flow : modify
+        rwentry['answer'] = 42
+
+
+        assert rwentry['answer'] == 42
+        while not Nonlocal.modification_detected:
+            time.sleep(1)
+        assert Nonlocal.modification_detected
+
+        Nonlocal.modification_detected = False
+        # inverted control flow : modified is conflict
+        with open('rw_entry.yaml', 'w') as fh:
+            yaml.dump({'answer_typo': 42}, fh)
+
+        while not Nonlocal.modification_detected:
+            time.sleep(1)
+        assert Nonlocal.modification_detected
+        assert rwentry.conflicts
+
+        # it is ignored when checking the data:
+        assert 'answer_typo' not in rwentry
+
+        # Even if there was conflict we can override it
+        # we are still the controller here (good or bad idea ? we could also give up and maybe suicide...)
+        Nonlocal.modification_detected = False
+        rwentry['another'] = 'smthg'
+
+        while not Nonlocal.modification_detected:
+            time.sleep(1)
+        assert Nonlocal.modification_detected
+
+        assert 'answer_typo' not in rwentry
+        assert rwentry['answer'] == 42
+        assert rwentry['another'] == 'smthg'
+
+        # TODO move
+        # TODO delete
+    assert True
+
+
+def yaml_ro_entry(entry_factory):
     # hack for py2 (py3 has actual nonlocal statement)
     class Nonlocal:
         pass
 
     Nonlocal.creation_detected = False
+    Nonlocal.move_detected = False
+    Nonlocal.modification_detected = False
+    Nonlocal.deletion_detected = False
 
     def created():
         Nonlocal.creation_detected = True
 
-    entry = entry_factory.watch('test_create_file', on_created=created)
+    def moved():
+        Nonlocal.move_detected = True
 
-    p = os.path.join(entry_factory.path, 'test_create_file')
-    assert Nonlocal.creation_detected is False
+    def modified():
+        Nonlocal.modification_detected = True
 
-    print(entry.filepath)
-    with open(entry.filepath, 'a'):
-        os.utime(entry.filepath, None)
+    def deleted():
+        Nonlocal.deletion_detected = True
 
-    now = time.time()
-    while time.time() - now < 300:
-        if Nonlocal.creation_detected:
-            break
+    ro_entry = entry_factory.expect('ro_entry.yaml')
 
+    with open('ro_entry.yaml', 'w') as fh:
+        yaml.dump({'answer': 42}, fh)
+
+    # inverted control flow
     assert Nonlocal.creation_detected
 
+    assert rwentry['answer'] == 42
+
+    # direct control flow : modify
+    rwentry['answer'] = 666
+
+    assert Nonlocal.modification_detected
+
+    # inverted control flow : modify
+    with open('rw_entry.yaml', 'w') as fh:
+        yaml.dump({'answer_typo': 42}, fh)
+
+    assert Nonlocal.modification_detected
+    assert rwentry.conflict
+
+    # TODO : raise exception ?
+    assert rwentry['answer_typo'] == 42
 
 
-# def test_handler_delete():
-#     pass
-#
-# def test_handler_move():
-#     pass
-#
-# def test_handler_modify():
-#     pass
-#
-#
-# def test_handler_create_conflict():
-#     pass
-#
-# def test_handler_delete_conflict():
-#     pass
-#
-# def test_handler_move_conflict():
-#     pass
-#
-# def test_handler_modify_conflict():
-#     pass
-#
 #
 # @pytest.fixture
 # def ro_fileentry(fileentry):
