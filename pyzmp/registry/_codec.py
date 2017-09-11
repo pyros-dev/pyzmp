@@ -84,7 +84,7 @@ class YAMLHierarchyDecoder(object):
         elif os.path.isdir(path):
             # recurse
             pathlist = os.listdir(path)
-            return {p: self.load(path, p, **kwargs) for p in pathlist}
+            return {p: self.load(os.path.join(path, p), **kwargs) for p in pathlist}
         else:
             # Same behavior as when trying to access a non existing key in a dictionary
             return KeyError(path)

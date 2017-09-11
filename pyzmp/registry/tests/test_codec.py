@@ -60,14 +60,53 @@ def test_hierarchy_encoder(hierarchy_data, tmpdir):
         ]
 
 
-# @pytest.fixture
-# def hierarchy_path(tmpdir):
-#     pass
-#
-# def test_hierarchy_decoder(hierarchy_path):
-#     pass
-#
-#
-#
+@pytest.fixture
+def hierarchy_path(tmpdir):
+    # TODO : hypothesis testing here ??
+
+    # This should match the same hierarchy as the hierarchy_data
+    os.makedirs(os.path.join(str(tmpdir), 'the'))
+    os.makedirs(os.path.join(str(tmpdir), 'the', 'hierarchical'))
+    with open(os.path.join(str(tmpdir), 'the', 'hierarchical', 'data'), 'w') as fh:
+        fh.writelines([
+            '---' + os.linesep,
+            '- the' + os.linesep,
+            '- answer' + os.linesep,
+        ])
+    os.makedirs(os.path.join(str(tmpdir), 'the', 'other'))
+    with open(os.path.join(str(tmpdir), 'the', 'hierarchical', 'data'), 'w') as fh:
+        fh.writelines([
+            '---' + os.linesep,
+            'dataset:' + os.linesep,
+            '  answer: 42' + os.linesep,
+        ])
+    return str(tmpdir)
+
+
+def test_hierarchy_decoder(hierarchy_path):
+    decoder = YAMLHierarchyDecoder()
+
+    data = decoder.load(hierarchy_path, filekey='nested')
+
+    assert sorted(data) == sorted({
+        'the': {
+            'hierarchical': {
+                'data': ['the', 'answer']
+            },
+            'nested': {
+                'other': {
+                    'dataset': {
+                        'answer': 42
+                    }
+                }
+            }
+        }
+    })
+
+
+# Ensuring one is the inverse of the other
 # def test_hierarchy_codec(hierarchy_data, tmpdir):
+#     pass
+
+# def test_hierarchy_decco(hierarchy_path):
 #     pass
