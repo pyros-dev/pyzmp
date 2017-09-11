@@ -17,14 +17,37 @@ def depth(d, level=1):
     return max(depth(d[k], level + 1) for k in d)
 
 
+class YAMLEncoder(object):
+    """YAML Encoder, decoupling the object instance and the side effect, for cleaner composition."""
+    def __init__(self, data, filepath, **kwargs):
+        self._data = data
+        self._filepath = filepath
+        # enforcing some useful defaults
+        kwargs.setdefault('default_flow_style', False)
+        kwargs.setdefault('allow_unicode', True)
+        kwargs.setdefault('explicit_start', True)
+        self.settings = kwargs
+
+    def dump(self):
+        with open(self._filepath, "w", encoding='utf8') as fh:  # maybe unneeded (already in yaml pkg) ?
+            yaml.dump(self._data, fh, **self.settings)
+
+
 class YAMLHierarchyEncoder(object):
     """
     An encoder that stores a mapping as a folder/files hierarchy
     """
-    def __init__(self):
-        pass
+    def __init__(self, data, path, filekey, **kwargs):
+        self._data = data
+        self._filekey = filekey
+        self._path = path
+        # enforcing some useful defaults
+        kwargs.setdefault('default_flow_style', False)
+        kwargs.setdefault('allow_unicode', True)
+        kwargs.setdefault('explicit_start', True)
+        self.settings = kwargs
 
-    def dump(self, data, path, filekey='file', **kwargs):
+    def dump(self, delay_file_encode=True):
         """
         Dumping data into a path (file or directory)
         :param data : the data
@@ -34,44 +57,66 @@ class YAMLHierarchyEncoder(object):
         :param kwargs: extra args
         :return:
         """
-        # enforcing some useful defaults
-        kwargs.setdefault('default_flow_style', False)
-        kwargs.setdefault('allow_unicode', True)
-        kwargs.setdefault('explicit_start', True)
-
         # remove unexisting keys mercilessly
-        for d in os.listdir(path):
-            if d not in data:
-                os.remove(os.path.join(path, d))
+        for d in os.listdir(self._path):
+            if d not in self._data:
+                os.remove(os.path.join(self._path, d))
 
-        for k, v in data.items():
-            if k == filekey and isinstance(v, collections.Mapping):
+        returned_data = {}
+
+        for k, v in self._data.items():
+            if k == self._filekey and isinstance(v, collections.Mapping):
                 # filekey is skipped here,
                 # so it should be explicit enough for a user viewing the file hierarchy...
-                for kk, vv in v.items():
-                    self.dumpfile(vv, os.path.join(path, kk), **kwargs)
+                file_encoders = {kk: YAMLEncoder(vv, os.path.join(self._path, kk), **self.settings) for kk, vv in v.items()}
+                # TODO : Trick here : return the partially applied encoders (before side effects)
+                # or actually finish application and trigger irreversible side-effect...
+                if delay_file_encode:
+                    v=file_encoders
+                else:
+                    v={fk: fv.dump() for fk, fv in file_encoders.items()}
             else:
                 if not isinstance(v, collections.Mapping):
-                    self.dumpfile(v, os.path.join(path, k), **kwargs)
+                    file_encoders = {k: YAMLEncoder(v, os.path.join(self._path, k), **self.settings)}
+                    if delay_file_encode:
+                        v=file_encoders
+                    else:
+                        v={fk: fv.dump() for fk, fv in file_encoders.items()}
                 else:
                     # recurse
-                    newdir = os.path.join(path, k)
+                    newdir = os.path.join(self._path, k)
                     os.makedirs(newdir)
-                    self.dump(v, newdir, filekey=filekey, **kwargs)
+                    v={
+                        k: YAMLHierarchyEncoder(v, newdir, filekey=self._filekey, **self.settings).dump(delay_file_encode=delay_file_encode)
+                    }
+            returned_data.update({k: v})
 
-    def dumpfile(self, data, filepath, **kwargs):
-        with open(filepath, "w", encoding='utf8') as fh:
-            yaml.dump(data, fh, **kwargs)
+        # => what should we return ???
+        # TODO : check monads and effect theory...
+        return returned_data
+
+
+class YAMLDecoder(object):
+    """YAML Decoder, decoupling the object instance and the side effect, for cleaner composition."""
+    def __init__(self, filepath, **kwargs):
+        self._filepath = filepath
+        self.settings = kwargs
+
+    def load(self):
+        with open(self._filepath, "r") as fh:  # maybe unneeded (already in yaml pkg) ?
+            return yaml.load(fh, **self.settings)
 
 
 class YAMLHierarchyDecoder(object):
     """
     A decoder that retrieve a mapping from a folder/files hierarchy
     """
-    def __init__(self):
-        super(YAMLHierarchyDecoder, self).__init__()
+    def __init__(self, path, filekey, **kwargs):
+        self._filekey = filekey
+        self._path = path
+        self.settings = kwargs
 
-    def load(self, path, filekey='file', **kwargs):
+    def load(self, delay_file_decode=True):
         """
         Loading mapping data from a path hierarchy
         :param path: the path
@@ -79,20 +124,19 @@ class YAMLHierarchyDecoder(object):
         :param kwargs: extra args
         :return:
         """
-        if os.path.isfile(path):
-            return {filekey: self.loadfile(path, **kwargs)}
-        elif os.path.isdir(path):
+        if os.path.isfile(self._path):
+            decoder = YAMLDecoder(self._path, **self.settings)
+            if delay_file_decode:
+                return {self._filekey: decoder}
+            else:
+                return {self._filekey: decoder.load()}
+        elif os.path.isdir(self._path):
             # recurse
-            pathlist = os.listdir(path)
-            return {p: self.load(os.path.join(path, p), **kwargs) for p in pathlist}
+            pathlist = os.listdir(self._path)
+            return {p: YAMLHierarchyDecoder(os.path.join(self._path, p), self._filekey, **self.settings).load(delay_file_decode=delay_file_decode) for p in pathlist}
         else:
-            # Same behavior as when trying to access a non existing key in a dictionary
-            return KeyError(path)
-
-    def loadfile(self, filepath, **kwargs):
-        with open(filepath, "r") as fh:
-           return yaml.load(fh, **kwargs)
-
+            # Something not a file and not a dir ?
+            return NotImplementedError
 
 
 # TODO : JSON ?
