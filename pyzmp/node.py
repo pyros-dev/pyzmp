@@ -101,8 +101,9 @@ except ImportError:
 from .master import manager
 from .exceptions import UnknownServiceException, UnknownRequestTypeException
 from .message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
-from .service import service_provider_cm
+#importfrom .service import service_provider_cm
 #from .service import RequestMsg, ResponseMsg, ErrorMsg  # only to access message types
+from .registry import registry
 
 current_node = multiprocessing.current_process
 
@@ -115,20 +116,20 @@ nodes = manager.dict()
 def dummy_cm():
     yield None
 
-
-@contextlib.contextmanager
-def node_cm(node_name, svc_address):
-    # advertise itself
-    nodes_lock.acquire()
-    nodes[node_name] = {'service_conn': svc_address}
-    nodes_lock.release()
-
-    yield
-
-    # concealing itself
-    nodes_lock.acquire()
-    nodes[node_name] = {}
-    nodes_lock.release()
+#
+# @contextlib.contextmanager
+# def node_cm(node_name, svc_address):
+#     # advertise itself
+#     nodes_lock.acquire()
+#     nodes[node_name] = {'service_conn': svc_address}
+#     nodes_lock.release()
+#
+#     yield
+#
+#     # concealing itself
+#     nodes_lock.acquire()
+#     nodes[node_name] = {}
+#     nodes_lock.release()
 
 
 # TODO : Nodelet ( thread, with fast intraprocess zmq comm - entity system design /vs/threadpool ?)
@@ -414,99 +415,103 @@ class Node(object):
         except Exception as e:
             raise
 
-
         poller = zmq.Poller()
         poller.register(svc_socket, zmq.POLLIN)
 
-        # Initializing all context managers
-        with service_provider_cm(
-                    self.name, self._svc_address, self._providers
-                ), node_cm(self.name, self._svc_address), self.context_manager() as cm:
+        # Registering this node
+        with registry.exposed(
+            name=self.name,
+            zmq_url=self._svc_address,
+            services=[svcname for svcname in self._providers],  # listing only service name
+        ):
 
-            # Starting the clock
-            start = time.time()
+            # Initializing user's context manager
+            with self.context_manager() as cm:
 
-            first_loop = True
-            # loop listening to connection
-            while not self.exit.is_set():
+                # Starting the clock
+                start = time.time()
 
-                # signalling startup only the first time, just after having check for exit request.
-                # We need to guarantee at least ONE call to update.
-                if first_loop:
-                    self.started.set()
+                first_loop = True
+                # loop listening to connection
+                while not self.exit.is_set():
 
-                # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
-                socks = dict(poller.poll(timeout=100))
-                if svc_socket in socks and socks[svc_socket] == zmq.POLLIN:
-                    req = None
-                    try:
-                        req_unparsed = svc_socket.recv()
-                        req = ServiceRequest_dictparse(req_unparsed)
-                        if isinstance(req, ServiceRequest):
-                            if req.service and req.service in self._providers.keys():
+                    # signalling startup only the first time, just after having check for exit request.
+                    # We need to guarantee at least ONE call to update.
+                    if first_loop:
+                        self.started.set()
 
-                                request_args = pickle.loads(req.args) if req.args else ()
-                                # add 'self' if providers[req.service] is a bound method.
-                                if self._providers[req.service].self:
-                                    request_args = (self, ) + request_args
-                                request_kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
-
-                                resp = self._providers[req.service].func(*request_args, **request_kwargs)
-                                svc_socket.send(ServiceResponse(
-                                    service=req.service,
-                                    response=pickle.dumps(resp),
-                                ).serialize())
-
-                            else:
-                                raise UnknownServiceException("Unknown Service {0}".format(req.service))
-                        else:  # should not happen : dictparse would fail before reaching here...
-                            raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
-                    except Exception:  # we transmit back all errors, and keep spinning...
-                        exctype, excvalue, tb = sys.exc_info()
-                        # trying to make a pickleable traceback
+                    # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
+                    socks = dict(poller.poll(timeout=100))
+                    if svc_socket in socks and socks[svc_socket] == zmq.POLLIN:
+                        req = None
                         try:
-                            ftb = Traceback(tb)
-                        except TypeError as exc:
-                            ftb = "Traceback manipulation error: {exc}. Verify that python-tblib is installed.".format(exc=exc)
+                            req_unparsed = svc_socket.recv()
+                            req = ServiceRequest_dictparse(req_unparsed)
+                            if isinstance(req, ServiceRequest):
+                                if req.service and req.service in self._providers.keys():
 
-                        # sending back that exception with traceback
-                        svc_socket.send(ServiceResponse(
-                            service=req.service,
-                            exception=ServiceException(
-                                exc_type=pickle.dumps(exctype),
-                                exc_value=pickle.dumps(excvalue),
-                                traceback=pickle.dumps(ftb),
-                            )
-                        ).serialize())
+                                    request_args = pickle.loads(req.args) if req.args else ()
+                                    # add 'self' if providers[req.service] is a bound method.
+                                    if self._providers[req.service].self:
+                                        request_args = (self, ) + request_args
+                                    request_kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
 
-                # time is ticking
-                # TODO : move this out of here. this class should require only generic interface to update method.
-                now = time.time()
-                timedelta = now - start
-                start = now
+                                    resp = self._providers[req.service].func(*request_args, **request_kwargs)
+                                    svc_socket.send(ServiceResponse(
+                                        service=req.service,
+                                        response=pickle.dumps(resp),
+                                    ).serialize())
 
-                # replacing the original Process.run() call, passing arguments to our target
-                if self._target:
-                    # bwcompat
-                    kwargs['timedelta'] = timedelta
+                                else:
+                                    raise UnknownServiceException("Unknown Service {0}".format(req.service))
+                            else:  # should not happen : dictparse would fail before reaching here...
+                                raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
+                        except Exception:  # we transmit back all errors, and keep spinning...
+                            exctype, excvalue, tb = sys.exc_info()
+                            # trying to make a pickleable traceback
+                            try:
+                                ftb = Traceback(tb)
+                            except TypeError as exc:
+                                ftb = "Traceback manipulation error: {exc}. Verify that python-tblib is installed.".format(exc=exc)
 
-                    # TODO : use return code to determine when/how we need to run this the next time...
-                    # Also we need to keep the exit status to be able to call external process as an update...
+                            # sending back that exception with traceback
+                            svc_socket.send(ServiceResponse(
+                                service=req.service,
+                                exception=ServiceException(
+                                    exc_type=pickle.dumps(exctype),
+                                    exc_value=pickle.dumps(excvalue),
+                                    traceback=pickle.dumps(ftb),
+                                )
+                            ).serialize())
 
-                    logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
-                    exitstatus = self._target(*args, **kwargs)
+                    # time is ticking
+                    # TODO : move this out of here. this class should require only generic interface to update method.
+                    now = time.time()
+                    timedelta = now - start
+                    start = now
 
-                if first_loop:
-                    first_loop = False
+                    # replacing the original Process.run() call, passing arguments to our target
+                    if self._target:
+                        # bwcompat
+                        kwargs['timedelta'] = timedelta
 
-                if exitstatus is not None:
-                    break
+                        # TODO : use return code to determine when/how we need to run this the next time...
+                        # Also we need to keep the exit status to be able to call external process as an update...
 
-            if self.started.is_set() and exitstatus is None and self.exit.is_set():
-                # in the not so special case where we started, we didnt get exit code and we exited,
-                # this is expected as a normal result and we set an exitcode here of 0
-                # As 0 is the conventional success for unix process successful run
-                exitstatus = 0
+                        logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
+                        exitstatus = self._target(*args, **kwargs)
+
+                    if first_loop:
+                        first_loop = False
+
+                    if exitstatus is not None:
+                        break
+
+                if self.started.is_set() and exitstatus is None and self.exit.is_set():
+                    # in the not so special case where we started, we didnt get exit code and we exited,
+                    # this is expected as a normal result and we set an exitcode here of 0
+                    # As 0 is the conventional success for unix process successful run
+                    exitstatus = 0
 
         logging.debug("[{self.name}] Node stopped.".format(**locals()))
         return exitstatus  # returning last exit status from the update function

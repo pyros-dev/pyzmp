@@ -25,29 +25,34 @@ from .message import ServiceRequest, ServiceResponse, ServiceResponse_dictparse,
 from .master import manager
 from .exceptions import UnknownResponseTypeException
 
-# Lock is definitely needed ( not implemented in proxy objects, unless the object itself already has it, like Queue )
-services_lock = manager.Lock()
-services = manager.dict()
+from .registry import registry
 
-
-@contextlib.contextmanager
-def service_provider_cm(node_name, svc_address, node_providers):
-    # advertising services
-    services_lock.acquire()
-    for svc_name, svc_endpoint in six.iteritems(node_providers):
-        # print('-> Providing {0} with {1}'.format(svc_name, svc_endpoint))
-        # needs reassigning to propagate update to manager
-        services[svc_name] = (services[svc_name] if svc_name in services else []) + [(node_name, svc_address)]
-    services_lock.release()
-
-    yield
-
-    # concealing services
-    services_lock.acquire()
-    for svc_name, svc_endpoint in six.iteritems(node_providers):
-        # print('-> Unproviding {0}'.format(svc_name))
-        services[svc_name] = [(n, a) for (n, a) in services[svc_name] if n != node_name]
-    services_lock.release()
+# # Lock is definitely needed ( not implemented in proxy objects, unless the object itself already has it, like Queue )
+# services_lock = manager.Lock()
+# services = manager.dict()
+#
+#
+# @contextlib.contextmanager
+# def service_provider_cm(node_name, svc_address, node_providers):
+#     # advertising services
+#     services_lock.acquire()
+#     for svc_name, svc_endpoint in six.iteritems(node_providers):
+#         # print('-> Providing {0} with {1}'.format(svc_name, svc_endpoint))
+#         # needs reassigning to propagate update to manager
+#         services[svc_name] = (services[svc_name] if svc_name in services else []) + [(node_name, svc_address)]
+#
+#         # Registering this node
+#         with registry.registered(name=self.name, value=self._svc_address):
+#     services_lock.release()
+#
+#     yield
+#
+#     # concealing services
+#     services_lock.acquire()
+#     for svc_name, svc_endpoint in six.iteritems(node_providers):
+#         # print('-> Unproviding {0}'.format(svc_name))
+#         services[svc_name] = [(n, a) for (n, a) in services[svc_name] if n != node_name]
+#     services_lock.release()
 
 
 class ServiceCallTimeout(Exception):
@@ -74,13 +79,12 @@ class Service(object):
 
         while True:
             timed_out = time.time() - start > endtime
-            if name in services and isinstance(services[name], list):
-                if len(services[name]) >= minimum_providers or timed_out:
-                    providers = services[name]
-                    if providers:
-                        return Service(name, providers)
-                    else:
-                        return None
+            providers = set()
+            for node, data in registry.items():
+                if name in data.get('services', []):
+                    providers |= {(data.get('name'), data.get('zmq_url'))}
+            if len(providers) >= minimum_providers:
+                return Service(name, providers)
 
             if timed_out:
                 break
@@ -89,6 +93,11 @@ class Service(object):
         return None
 
     def __init__(self, name, providers=None):
+        """
+        Initializing a Service (actually a proxy object for a RPC call)
+        :param name: the name fo the service
+        :param providers: a list of tuples of the form (node_name, zmq_url)
+        """
         self.name = name
         self.providers = providers
         # TODO : make a provide just a list of node names, and have connection URLs somewhere else...

@@ -475,3 +475,5 @@ class TestMockHWNodeSocket(TestMockHWNodeIPC):
     #TODO : verify all tests are run again with proper fixture
 
 
+if __name__ == '__main__':
+    pytest.main(['-s', '-x', __file__])

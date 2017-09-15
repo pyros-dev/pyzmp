@@ -4,10 +4,22 @@ import collections
 from io import open
 
 import os
+
+import functools
+
+import six
 import yaml
+
+from concurrent.futures import ThreadPoolExecutor
 
 """
 Module allowing to GRAFT folder hierarchy with files mapping trees
+
+Design concepts : 
+- One thread per process to handle File system access
+- One object instance per actual resource
+  => one YAMLEncoder instance for one file or one string (determined on load/dump)
+  => one YAMLHierarchyEncoder for one directory (determined on initialization)
 """
 
 
@@ -17,37 +29,34 @@ def depth(d, level=1):
     return max(depth(d[k], level + 1) for k in d)
 
 
+executor = ThreadPoolExecutor(max_workers=1)  # only one thread to manage all file access for this package
+
+
 class YAMLEncoder(object):
     """YAML Encoder, decoupling the object instance and the side effect, for cleaner composition."""
-    def __init__(self, data, filepath, **kwargs):
-        self._data = data
-        self._filepath = filepath
+
+    def __init__(self, **kwargs):
         # enforcing some useful defaults
         kwargs.setdefault('default_flow_style', False)
         kwargs.setdefault('allow_unicode', True)
         kwargs.setdefault('explicit_start', True)
         self.settings = kwargs
 
-    def dump(self):
-        with open(self._filepath, "w", encoding='utf8') as fh:  # maybe unneeded (already in yaml pkg) ?
-            yaml.dump(self._data, fh, **self.settings)
+    def dump(self, data, stream=None):
+        return yaml.dump(data, stream, **self.settings)
+
+    def future_dump(self, data, stream=None):
+        """Dump data into a file asynchronously (eager)
+        Maybe not really useful since for writing, we want direct control flow.
+        """
+        return executor.submit(self.dump, data, stream)
 
 
 class YAMLHierarchyEncoder(object):
     """
     An encoder that stores a mapping as a folder/files hierarchy
     """
-    def __init__(self, data, path, filekey, **kwargs):
-        self._data = data
-        self._filekey = filekey
-        self._path = path
-        # enforcing some useful defaults
-        kwargs.setdefault('default_flow_style', False)
-        kwargs.setdefault('allow_unicode', True)
-        kwargs.setdefault('explicit_start', True)
-        self.settings = kwargs
-
-    def dump(self, delay_file_encode=True):
+    def __init__(self, path, filekey, **kwargs):
         """
         Dumping data into a path (file or directory)
         :param data : the data
@@ -57,54 +66,82 @@ class YAMLHierarchyEncoder(object):
         :param kwargs: extra args
         :return:
         """
+        self._path = path
+        self._filekey = filekey
+        # enforcing some useful defaults
+        kwargs.setdefault('default_flow_style', False)
+        kwargs.setdefault('allow_unicode', True)
+        kwargs.setdefault('explicit_start', True)
+        self.settings = kwargs
+        # We only need one encoder to keep settings
+        self._file_encoder = YAMLEncoder(**self.settings)
+
+    # TODO Is there a simple / cleaner magic method (getattr ? getitem ?) to do this ?
+    # we also dont want to be confused with the entries indexing if it makes things not obvious somehow...
+    def sub(self, relpath):
+        newdir = os.path.join(self._path, relpath)
+        # direct controlled creation
+        os.makedirs(newdir)
+        return YAMLHierarchyEncoder()
+
+
+
+    def _clean_missing(self, data):
         # remove unexisting keys mercilessly
         for d in os.listdir(self._path):
-            if d not in self._data:
+            if d not in data:
                 os.remove(os.path.join(self._path, d))
+
+    def dump(self, data):
+        """
+        Dumping data into a path (file or directory). Direct control flow.
+        :param data : the data
+        :return: TODO
+        """
+        self._clean_missing(data)
 
         returned_data = {}
 
-        for k, v in self._data.items():
+        for k, v in data.items():
             if k == self._filekey and isinstance(v, collections.Mapping):
                 # filekey is skipped here,
                 # so it should be explicit enough for a user viewing the file hierarchy...
-                file_encoders = {kk: YAMLEncoder(vv, os.path.join(self._path, kk), **self.settings) for kk, vv in v.items()}
-                # TODO : Trick here : return the partially applied encoders (before side effects)
-                # or actually finish application and trigger irreversible side-effect...
-                if delay_file_encode:
-                    v=file_encoders
-                else:
-                    v={fk: fv.dump() for fk, fv in file_encoders.items()}
+                encoded_v = {}
+                for kk, vv in v.items():
+                    with open(os.path.join(self._path, kk), "w", encoding='utf8') as fh:
+                        encoded_v[kk] = self._file_encoder.dump(vv, fh)
             else:
                 if not isinstance(v, collections.Mapping):
-                    file_encoders = {k: YAMLEncoder(v, os.path.join(self._path, k), **self.settings)}
-                    if delay_file_encode:
-                        v=file_encoders
-                    else:
-                        v={fk: fv.dump() for fk, fv in file_encoders.items()}
+                    with open(os.path.join(self._path, k), "w", encoding='utf8') as fh:
+                        encoded_v = self._file_encoder.dump(v, fh)
                 else:
-                    # recurse
+                    # recurse (keeping one instance per directory)
+                    # TODO : loop to avoid recreating instance of hierarchy encoder
                     newdir = os.path.join(self._path, k)
                     os.makedirs(newdir)
-                    v={
-                        k: YAMLHierarchyEncoder(v, newdir, filekey=self._filekey, **self.settings).dump(delay_file_encode=delay_file_encode)
-                    }
-            returned_data.update({k: v})
+                    encoded_v = YAMLHierarchyEncoder(newdir, filekey=self._filekey, **self.settings).dump(v)
+            returned_data.update({k: encoded_v})
 
         # => what should we return ???
         # TODO : check monads and effect theory...
         return returned_data
 
+    def future_dump():
+
+
 
 class YAMLDecoder(object):
     """YAML Decoder, decoupling the object instance and the side effect, for cleaner composition."""
-    def __init__(self, filepath, **kwargs):
-        self._filepath = filepath
+    def __init__(self, **kwargs):
         self.settings = kwargs
 
-    def load(self):
-        with open(self._filepath, "r") as fh:  # maybe unneeded (already in yaml pkg) ?
-            return yaml.load(fh, **self.settings)
+    def load(self, stream=None):
+        return yaml.load(stream, **self.settings)
+
+    def future_load(self, stream):
+        """Dump data into a file asynchronously (lazy)
+        """
+        return executor.submit(self.load, stream)
 
 
 class YAMLHierarchyDecoder(object):
@@ -115,28 +152,24 @@ class YAMLHierarchyDecoder(object):
         self._filekey = filekey
         self._path = path
         self.settings = kwargs
+        self._file_decoder = YAMLDecoder(**self.settings)
 
-    def load(self, delay_file_decode=True):
+    def load(self):
         """
-        Loading mapping data from a path hierarchy
-        :param path: the path
-        :param filekey: the key to be added to indicate file transition
-        :param kwargs: extra args
+        Loading mapping data from a path hierarchy. Direct lazy control flow.
         :return:
         """
         if os.path.isfile(self._path):
-            decoder = YAMLDecoder(self._path, **self.settings)
-            if delay_file_decode:
-                return {self._filekey: decoder}
-            else:
-                return {self._filekey: decoder.load()}
+            with open(self._path, "r") as fh:  # maybe unneeded (already in yaml pkg) ?
+                data = self._file_decoder.future_load(fh)
         elif os.path.isdir(self._path):
-            # recurse
+            # recurse (keeping one instance per directory)
             pathlist = os.listdir(self._path)
-            return {p: YAMLHierarchyDecoder(os.path.join(self._path, p), self._filekey, **self.settings).load(delay_file_decode=delay_file_decode) for p in pathlist}
+            data = {p: YAMLHierarchyDecoder(os.path.join(self._path, p), self._filekey, **self.settings).load() for p in pathlist}
         else:
             # Something not a file and not a dir ?
             return NotImplementedError
 
+        return data
 
 # TODO : JSON ?

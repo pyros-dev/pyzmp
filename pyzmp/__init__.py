@@ -24,8 +24,9 @@ from __future__ import absolute_import
 
 from .exceptions import UnknownServiceException, UnknownRequestTypeException, UnknownResponseTypeException
 from .master import manager
-from .node import Node, current_node
-from .service import Service, services, discover, ServiceCallTimeout
+#from .node import Node, current_node
+#from .service import Service, services, discover, ServiceCallTimeout
+from .service import Service, discover, ServiceCallTimeout
 
 
 topics = manager.list()

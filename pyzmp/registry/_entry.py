@@ -18,7 +18,9 @@ import collections
 import yaml
 import errno
 
-from ._fswatcher import WatchedFile, FileEventHandler, FileWatcher
+from ._fswatcher import WatchedFile, OwnedFile, FileEventHandler, FileWatcher
+from ._codec import YAMLDecoder, YAMLEncoder, YAMLHierarchyEncoder, YAMLHierarchyDecoder
+
 
 """
 Module containing classes to aggregate information from a filesystem
@@ -47,15 +49,14 @@ class ROEntry(collections.Mapping):
     Class abstracting the mapping (read-only) interface to an entry in the registry
     """
 
-    def __init__(self, data):
+    def __init__(self, data=None, repr_decoder=None):
         """
-        :param data: data (iterable) to provide mapping interface for
-        :param kwargs: making multiple inheritance simple
+        :param data: data (iterable) to provide mapping interface for (or nothing if it is to be retrieved later)
+        :param repr_decoder: simple readable repr
         """
-        self._data = data
-
-    def fileload(self):
-        raise NotImplementedError
+        self._data = data  # None marks a unloaded Entry
+        self._repr_decoder = repr_decoder or YAMLDecoder()
+        super(ROEntry, self).__init__()
 
     def __getitem__(self, item):
         return self._data[item]
@@ -67,87 +68,69 @@ class ROEntry(collections.Mapping):
     def __len__(self):
         return len(self._data)
 
-    # TODO : YAML display style
     def __str__(self):
-        return str({n: getattr(self, n) for n in self})
+        return self._repr_decoder.load(self)
 
     def __repr__(self):
-        return str({n: getattr(self, n) for n in self})
+        return self._repr_decoder.load(self)
 
 
-class RWEntry(ROEntry, collections.MutableMapping):
-
-    def __init__(self, data):
+class RWEntry(collections.MutableMapping):
+    """
+    Class abstracting the mapping (mutable) interface to an entry in the registry
+    We do NOT inherit from ROEntry, trying to prevent multiple inheritance diamond issues in children.
+    """
+    def __init__(self, data, repr_decoder=None):
         """
         :param data: data (iterable) to provide mapping interface for
-        :param kwargs: making multiple inheritance simple
+        :param repr_decoder: simple readable repr
         """
-        super(RWEntry, self).__init__(data)
-        # to force file creation asap (direct control flow)
-        self.filedump()
+        self._data = data  # enforcing data to be there from the initialization
+        self._repr_decoder = repr_decoder or YAMLDecoder()
+        super(RWEntry, self).__init__()
 
-    def __del__(self):
-        # to force file deletion
-        self.filedump(remove=True)
+    def __getitem__(self, item):
+        return self._data[item]
 
-    def filedump(self, remove=False):
-        raise NotImplementedError
+    def __iter__(self):
+        for d in self._data:
+            yield d
+
+    def __len__(self):
+        return len(self._data)
+
+    def __str__(self):
+        return self._repr_decoder.load(self)
+
+    def __repr__(self):
+        return self._repr_decoder.load(self)
 
     def __setitem__(self, key, value):
         self._data[key] = value
-        self.filedump()
 
     def __delitem__(self, key):
         del self._data[key]
-        self.filedump()
 
 
 class ROFileEntry(WatchedFile, ROEntry):
     """
     Class representing one Read-Only entry (file) in the registry
     """
-    def __init__(self, filepath, on_created=None, on_modified=None, on_moved=None, on_deleted=None):
+    def __init__(self, hier_decoder, on_created=None, on_modified=None, on_moved=None, on_deleted=None):
+
         # a member to indicate if a conflict has been detected for this FileEntry
         self.conflict = False
 
         # We dont use super, since we need to init multiple base classes
         WatchedFile.__init__(
             self,
-            filepath=filepath,
+            hier_decoder=hier_decoder,
             on_created=on_created, on_modified=on_modified, on_moved=on_moved, on_deleted=on_deleted
         )
         ROEntry.__init__(
             self,
-            data={}
+            data=self.decoder.load()  # initializing data with current file content
         )
-
-    def fileload(self):
-        # Also supporting the directory case somehow... maybe not a good idea ?
-        if os.path.isfile(self.filepath):
-                with open(self.filepath, "r") as fh:
-                    self._data = yaml.load(fh)
-        elif os.path.isdir(self.filepath):
-            self._data[os.path.basename(self.filepath)] = {}
-        else:
-            # not changing anything
-            raise NotImplementedError  # does this actually happens ?
-
-    def on_created(self):
-        self.fileload()
-        super(ROFileEntry, self).on_created()
-
-    def on_modified(self):
-        self.fileload()
-        super(ROFileEntry, self).on_modified()
-
-    def on_moved(self):
-        # unexpected : should never be moved
-        self.conflict = True
-        super(ROFileEntry, self).on_moved()
-
-    def on_deleted(self):
-        self._data = {}
-        super(ROFileEntry, self).on_deleted()
 
     def __getitem__(self, item):
         if self.conflict:
@@ -165,31 +148,32 @@ class ROFileEntry(WatchedFile, ROEntry):
         return super(ROFileEntry, self).__len__()
 
 
-class RWFileEntry(WatchedFile, RWEntry):
+class RWFileEntry(OwnedFile, RWEntry):
     """
     Class representing one Read/Write entry (file) in the registry
     The current process is supposed to be the only one allowed to create/modify/delete it.
-    """
-    def __init__(self, filepath, on_created=None, on_modified=None, on_moved=None, on_deleted=None):  # TODO : on_create=on_create, on_modify=on_modify, on_delete=on_delete, on_move=on_move
-        # a member to indicate if a conflict has been detected for this FileEntry
-        self.unexpected_create = 0
-        self.unexpected_modify = 0
-        self.unexpected_move = 0
-        self.unexpected_delete = 0
 
-        self.expected_create = 0
-        self.expected_modify = 0
-        self.expected_move = 0
-        self.expected_delete = 0
+    Note : this class cannot inherit from ROFileEntry to prevent multiple inheritance issues.
+    Therefore some code is duplicated here... A 'clean' solution might be too complex for maintenance however...
+    """
+    def __init__(self, hier_decoder, file_encoder, on_created=None, on_modified=None, on_moved=None, on_deleted=None):
+
+        assert isinstance(file_encoder, (YAMLHierarchyEncoder,))  # we can add other accepted encoders here...
+        assert isinstance(hier_decoder, (YAMLHierarchyDecoder,))  # we can add other accepted decoders here...
+
+        # Encoder instance to be able to translate entry content into file content
+        self.encoder = file_encoder
+        self.decoder = hier_decoder
 
         # : the number of conflicts last time we overwrote the data
         # So we should be safe to go after that if the number of conflict doesnt increase
         self.last_conflicts = 0
 
         # We don't use super, since we need to init multiple base classes
-        WatchedFile.__init__(
+        OwnedFile.__init__(
             self,
-            filepath=filepath,
+            file_encoder=file_encoder,
+            hier_decoder=hier_decoder,
             on_created=on_created, on_modified=on_modified, on_moved=on_moved, on_deleted=on_deleted
         )
         self.expected_create += 1
@@ -202,7 +186,7 @@ class RWFileEntry(WatchedFile, RWEntry):
         # preventing late conflict in case somebody checks
         self.expected_delete += 1
         RWEntry.__del__(self)
-        WatchedFile.__del__(self)
+        OwnedFile.__del__(self)
 
     def fileload(self):
         if self.conflicts <= self.last_conflicts:
@@ -220,34 +204,27 @@ class RWFileEntry(WatchedFile, RWEntry):
 
     def __setitem__(self, key, value):
         self.expected_modify += 1
-        super(RWFileEntry, self).__setitem__(key, value)
+        RWEntry.__setitem__(key, value)
+        self.filedump(remove=False)
 
     def __delitem__(self, key):
         self.expected_modify += 1
-        super(RWFileEntry, self).__delitem__(key)
+        RWEntry.__delitem__(key)
+        self.filedump(remove=True)
 
     def on_created(self):
-        self.expected_create -= 1
-        if self.expected_create < 0:
-            self.unexpected_create += 1
         super(RWFileEntry, self).on_created()
+        self.fileload()
 
     def on_modified(self):
-        self.expected_modify -= 1
-        if self.expected_modify < 0:
-            self.unexpected_modify += 1
         super(RWFileEntry, self).on_modified()
+        self.fileload()
 
     def on_moved(self):
-        self.expected_move -= 1
-        if self.expected_move < 0:
-            self.unexpected_move += 1
+        # unexpected : should never be moved
         super(RWFileEntry, self).on_moved()
 
     def on_deleted(self):
-        self.expected_delete -= 1
-        if self.expected_delete < 0:
-            self.unexpected_delete += 1
         super(RWFileEntry, self).on_deleted()
         # after delete we have no data available
         self._data = {}
@@ -261,7 +238,9 @@ class EntryFactory(FileEventHandler, FileWatcher):
     """
     An Event Handler for a set of entries
     """
-    def __init__(self, path):
+    def __init__(self, path, filekey):
+        #: the key that mark the transition to file storage in the mapping
+        self.filekey = filekey
         super(EntryFactory, self).__init__(base_path=path)
 
     # direct control flow
@@ -274,7 +253,8 @@ class EntryFactory(FileEventHandler, FileWatcher):
         """
         resolved = os.path.join(self.base_path, relpath)
         self.watched[relpath] = RWFileEntry(
-            filepath=os.path.realpath(resolved),
+            hier_decoder=YAMLHierarchyDecoder(resolved, filekey=self.filekey),
+            file_encoder=YAMLHierarchyEncoder(resolved, filekey=self.filekey),
             on_created=on_created,
             on_modified=on_modified,
             on_deleted=on_deleted,
@@ -311,7 +291,7 @@ class EntryFactory(FileEventHandler, FileWatcher):
         """
         resolved = os.path.join(self.base_path, relpath)
         self.watched[relpath] = ROFileEntry(
-            filepath=os.path.realpath(resolved),
+            hier_decoder=YAMLHierarchyDecoder(resolved, filekey=self.filekey),
             on_created=on_created,
             on_modified=on_modified,
             on_deleted=on_deleted,

@@ -11,6 +11,7 @@ import yaml
 
 from pyzmp.registry._codec import YAMLHierarchyEncoder, YAMLHierarchyDecoder
 
+
 @pytest.fixture
 def hierarchy_data():
     # TODO : hypothesis testing here ??
@@ -32,9 +33,9 @@ def hierarchy_data():
 
 def test_hierarchy_encoder(hierarchy_data, tmpdir):
 
-    encoder = YAMLHierarchyEncoder(hierarchy_data, str(tmpdir), filekey='nested')
+    encoder = YAMLHierarchyEncoder(str(tmpdir))
 
-    encoder.dump(delay_file_encode=False)
+    encoder.dump(hierarchy_data, filekey='nested')
 
     # asserting the dumped hierarchy
     assert ['the'] == os.listdir(str(tmpdir))
@@ -84,9 +85,9 @@ def hierarchy_path(tmpdir):
 
 
 def test_hierarchy_decoder(hierarchy_path):
-    decoder = YAMLHierarchyDecoder(hierarchy_path, filekey='nested')
+    decoder = YAMLHierarchyDecoder(hierarchy_path)
 
-    data = decoder.load(delay_file_decode=False)
+    data = decoder.load(filekey='nested')
 
     assert sorted(data) == sorted({
         'the': {

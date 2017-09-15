@@ -73,7 +73,55 @@ def entry_factory(tmpdir):
     entry_path = tmpdir.join('domain_host')
     # actually forcing directory creation (tmpdir is lazy)
     entry_path.mkdir()
-    return EntryFactory(str(entry_path))
+    return EntryFactory(str(entry_path), filekey='filekey')
+
+
+def yaml_ro_entry(entry_factory):
+    # hack for py2 (py3 has actual nonlocal statement)
+    class Nonlocal:
+        pass
+
+    Nonlocal.creation_detected = False
+    Nonlocal.move_detected = False
+    Nonlocal.modification_detected = False
+    Nonlocal.deletion_detected = False
+
+    def created():
+        Nonlocal.creation_detected = True
+
+    def moved():
+        Nonlocal.move_detected = True
+
+    def modified():
+        Nonlocal.modification_detected = True
+
+    def deleted():
+        Nonlocal.deletion_detected = True
+
+    ro_entry = entry_factory.expect('ro_entry.yaml')
+
+    with open('ro_entry.yaml', 'w') as fh:
+        yaml.dump({'answer': 42}, fh)
+
+    # inverted control flow
+    assert Nonlocal.creation_detected
+
+    assert rwentry['answer'] == 42
+
+    # direct control flow : modify
+    rwentry['answer'] = 666
+
+    assert Nonlocal.modification_detected
+
+    # inverted control flow : modify
+    with open('rw_entry.yaml', 'w') as fh:
+        yaml.dump({'answer_typo': 42}, fh)
+
+    assert Nonlocal.modification_detected
+    assert rwentry.conflict
+
+    # TODO : raise exception ?
+    assert rwentry['answer_typo'] == 42
 
 
 def test_yaml_rw_entry(entry_factory):
@@ -152,53 +200,6 @@ def test_yaml_rw_entry(entry_factory):
         # TODO delete
     assert True
 
-
-def yaml_ro_entry(entry_factory):
-    # hack for py2 (py3 has actual nonlocal statement)
-    class Nonlocal:
-        pass
-
-    Nonlocal.creation_detected = False
-    Nonlocal.move_detected = False
-    Nonlocal.modification_detected = False
-    Nonlocal.deletion_detected = False
-
-    def created():
-        Nonlocal.creation_detected = True
-
-    def moved():
-        Nonlocal.move_detected = True
-
-    def modified():
-        Nonlocal.modification_detected = True
-
-    def deleted():
-        Nonlocal.deletion_detected = True
-
-    ro_entry = entry_factory.expect('ro_entry.yaml')
-
-    with open('ro_entry.yaml', 'w') as fh:
-        yaml.dump({'answer': 42}, fh)
-
-    # inverted control flow
-    assert Nonlocal.creation_detected
-
-    assert rwentry['answer'] == 42
-
-    # direct control flow : modify
-    rwentry['answer'] = 666
-
-    assert Nonlocal.modification_detected
-
-    # inverted control flow : modify
-    with open('rw_entry.yaml', 'w') as fh:
-        yaml.dump({'answer_typo': 42}, fh)
-
-    assert Nonlocal.modification_detected
-    assert rwentry.conflict
-
-    # TODO : raise exception ?
-    assert rwentry['answer_typo'] == 42
 
 
 #
