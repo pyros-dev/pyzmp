@@ -39,8 +39,8 @@ def test_hierarchy_encoder(hierarchy_data, tmpdir):
 
     # asserting the dumped hierarchy
     assert ['the'] == os.listdir(str(tmpdir))
-    # note how 'nested' is skipped
-    assert ['hierarchical', 'other'] == os.listdir(os.path.join(str(tmpdir), 'the'))
+    # note how 'nested' is skipped (order does not matter)
+    assert {'hierarchical', 'other'} == set(os.listdir(os.path.join(str(tmpdir), 'the')))
     # verifyind hierarchical data as directory
     assert ['data'] == os.listdir(os.path.join(str(tmpdir), 'the', 'hierarchical'))
     # verifying last level as file

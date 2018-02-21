@@ -121,7 +121,7 @@ class YAMLHierarchyEncoder(YAMLEncoder):
                     # recurse (keeping one instance per directory)
                     newdir = os.path.join(stream, k)
                     os.makedirs(newdir)
-                    encoded_v = YAMLHierarchyEncoder(newdir, filekeys=self._filekeys, **self.settings).dump(v)
+                    encoded_v = YAMLHierarchyEncoder(filekeys=self._filekeys, **self.settings).dump(v, stream=newdir)
             returned_data.update({k: encoded_v})
 
         # => what should we return ???
