@@ -33,9 +33,9 @@ def hierarchy_data():
 
 def test_hierarchy_encoder(hierarchy_data, tmpdir):
 
-    encoder = YAMLHierarchyEncoder(str(tmpdir))
+    encoder = YAMLHierarchyEncoder(filekeys='nested')
 
-    encoder.dump(hierarchy_data, filekey='nested')
+    encoder.dump(hierarchy_data, str(tmpdir))
 
     # asserting the dumped hierarchy
     assert ['the'] == os.listdir(str(tmpdir))
@@ -85,9 +85,9 @@ def hierarchy_path(tmpdir):
 
 
 def test_hierarchy_decoder(hierarchy_path):
-    decoder = YAMLHierarchyDecoder(hierarchy_path)
+    decoder = YAMLHierarchyDecoder(filekeys='nested')
 
-    data = decoder.load(filekey='nested')
+    data = decoder.load(hierarchy_path)
 
     assert sorted(data) == sorted({
         'the': {

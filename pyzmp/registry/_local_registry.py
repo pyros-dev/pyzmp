@@ -15,7 +15,7 @@ import errno
 # Used to override the default tmp directory (for tests for example)
 tmpdir = None
 
-from ._entry import ROFileEntry, RWFileEntry, EntryFactory
+#from ._entry import ROFileEntry, RWFileEntry, EntryFactory
 
 
 # TODO : Global registry with namedtuples ? CRDT ?
