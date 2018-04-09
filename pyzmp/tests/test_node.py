@@ -240,6 +240,39 @@ def test_node_running_as_context_manager():
     assert not n1.is_alive()
 
 
+@pytest.mark.timeout(5)
+def test_update_before_started():
+    """Checks that a node can be passed a keyword argument using delegation"""
+    ns = multiprocessing.Manager().Namespace()
+    ns.kwarg = 42
+
+    def kwarguser(intval, **kwargs):  # kwargs is there to accept extra arguments nicely (timedelta)
+        ns.kwarg -= intval
+        return ns.kwarg
+
+    n1 = pyzmp.Node(kwargs={'intval': ns.kwarg, }, target=kwarguser)
+    assert not n1.is_alive()
+
+    # here the update has NOT already been called once
+    assert ns.kwarg == 42
+
+    svc_url = n1.start()
+    assert n1.is_alive()
+    assert svc_url
+
+    # here the update has already been called once
+    assert ns.kwarg == 0
+
+    exitcode = n1.shutdown()
+    assert exitcode == 0
+    assert not n1.is_alive()
+
+    assert ns.kwarg == 0
+
+
+
+
+
 def test_update_rate():
     """
     Testing that the update methods get a correct timedelta
