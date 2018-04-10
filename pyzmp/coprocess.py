@@ -176,10 +176,10 @@ class CoProcess(object):
     # TODO : decorator to easily mix functional(via param) and inheritance(OO) API styles
     # See type classes, traits, etc.
     @contextlib.contextmanager
-    def __chained_ctx(self):
+    def __chained_ctx(self, *args, **kwargs):
         # CAREFUL with timing constraints
         # TODO check with python 3.1 and list of CMs...
-        with self.child_context() as cm:
+        with self.child_context(*args, **kwargs) as cm:
 
             ctxt = tuple()
 
@@ -187,7 +187,7 @@ class CoProcess(object):
                 ctxt = ctxt + maybe_tuple(cm)
 
             if self._user_ctx:
-                with self._user_ctx() as ucm:
+                with self._user_ctx(*args, **kwargs) as ucm:
                     if ucm is not None:
                         ctxt = ctxt + maybe_tuple(ucm)
                         # skipping Empty (None) Context
@@ -204,7 +204,7 @@ class CoProcess(object):
                     yield
 
     @contextlib.contextmanager
-    def child_context(self):
+    def child_context(self, *args, **kwargs):
         yield
 
     def has_started(self):
@@ -445,7 +445,7 @@ class CoProcess(object):
 
         print('[{proc}] Proc started as [{pid}]'.format(proc=self.name, pid=self.ident))
 
-        with self.context_manager() as cm:
+        with self.context_manager(*args, **kwargs) as cm:
             if cm:
                 cmargs = maybe_tuple(cm)
                 # prepending context manager, to be able to access it from target

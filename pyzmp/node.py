@@ -99,7 +99,7 @@ except ImportError:
 # node3 <--topic_cb-- node2 <--topic_cb-- node1
 
 from .master import manager
-from .coprocess import CoProcess
+from .coprocess import CoProcess, maybe_tuple
 from .exceptions import UnknownServiceException, UnknownRequestTypeException
 from .message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
 from .service import service_provider_cm
@@ -145,16 +145,7 @@ class Node(CoProcess):
         :return:
         """
 
-        @contextlib.contextmanager
-        def node_ctx_mgr():
-            with self.node_ctx() as ndcxt:
-                if context_manager:
-                    with context_manager as cm:
-                        yield ndcxt, cm
-                else:
-                    yield ndcxt
-
-        super(Node, self).__init__(name=name, context_manager=node_ctx_mgr, target=self.receive_reply, args=args, kwargs=kwargs)
+        super(Node, self).__init__(name=name, context_manager=context_manager, target=self.receive_reply, args=args, kwargs=kwargs)
 
         self._loop_target = loop_target or self.update
 
@@ -174,31 +165,8 @@ class Node(CoProcess):
         None waits until the update has been called at least once.
         """
 
-        # we lazily create our process delegate (with same arguments)
-        if self.daemon:
-            daemonic = True
-        else:
-            daemonic = False
-
-        pargs = self._pargs.copy()
-        pargs.pop('daemonic', None)
-
-        self._process = multiprocessing.Process(**pargs)
-
-        self._process.daemon = daemonic
-
-        if self.is_alive():
-            # if already started, we shutdown and join before restarting
-            # not timeout will bock here (default join behavior).
-            # otherwise we simply use the same timeout.
-            self.shutdown(join=True, timeout=timeout)  # TODO : only restart if no error (check exitcode)
-            self.start(timeout=timeout)  # recursive to try again if needed
-        else:
-            self._process.start()
-
-        # timeout None means we want to wait and ensure it has started
-        # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        if self.started.wait(timeout=timeout):  # blocks until we know true or false
+        started = super(Node, self).start(timeout=timeout)
+        if started:
             # TODO : return something produced in the context manager passed
             return self._svc_address  # returning the zmp url as a way to connect to the node
             # CAREFUL : doesnt make sense if this node only run a one-time task...
@@ -298,7 +266,7 @@ class Node(CoProcess):
         return exitcode
 
     @contextlib.contextmanager
-    def node_ctx(self):
+    def child_context(self, *args, **kwargs):
         zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
         # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
         zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
@@ -332,74 +300,13 @@ class Node(CoProcess):
         # Initializing all context managers
         with service_provider_cm(
                 self.name, self._svc_address, self._providers
-        ), node_cm(self.name, self._svc_address):
-            yield poller, svc_socket
+        ), node_cm(self.name, self._svc_address), super(Node, self).child_context(*args, **kwargs) as inhctxt:
+            yielded = (poller, svc_socket)
+            if inhctxt:
+                yielded = yielded + maybe_tuple(inhctxt)  # inspiration from monads ? check http://www.valuedlessons.com/2008/01/monads-in-python-with-nice-syntax.html
+            yield yielded
 
         # all context managers are cleanedup here
-
-    # def run(self, *args, **kwargs):
-    #     """
-    #     The Node main method, running in a child process (similar to Process.run() but also accepts args)
-    #     A children class can override this method, but it needs to call super().run(*args, **kwargs)
-    #     for the node to start properly and call update() as expected.
-    #     :param args: arguments to pass to update()
-    #     :param kwargs: keyword arguments to pass to update()
-    #     :return: last exitcode returned by update()
-    #     """
-    #     # TODO : make use of the arguments ? since run is now the target for Process...
-    #
-    #     exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
-    #
-    #     print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
-    #
-    #     with self.node_ctx() as (poller, svc_skt):
-    #
-    #         # Starting the clock
-    #         start = time.time()
-    #
-    #         first_loop = True
-    #         # loop listening to connection
-    #         while not self.exit.is_set():
-    #
-    #             # signalling startup only the first time, just after having check for exit request.
-    #             # We need to guarantee at least ONE call to update.
-    #             if first_loop:
-    #                 self.started.set()
-    #
-    #             # time is ticking
-    #             # TODO : move this out of here. this class should require only generic interface to update method.
-    #             now = time.time()
-    #             timedelta = now - start
-    #             start = now
-    #
-    #             # replacing the original Process.run() call, passing arguments to our target
-    #             if self._target:
-    #                 # bwcompat
-    #                 kwargs['timedelta'] = timedelta
-    #
-    #                 # TODO : use return code to determine when/how we need to run this the next time...
-    #                 # Also we need to keep the exit status to be able to call external process as an update...
-    #
-    #                 logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
-    #                 exitstatus = self._target(*args, **kwargs)
-    #
-    #             if first_loop:
-    #                 first_loop = False
-    #
-    #             if exitstatus is not None:
-    #                 break
-    #
-    #         if self.started.is_set() and exitstatus is None and self.exit.is_set():
-    #             # in the not so special case where we started, we didnt get exit code and we exited,
-    #             # this is expected as a normal result and we set an exitcode here of 0
-    #             # As 0 is the conventional success for unix process successful run
-    #             exitstatus = 0
-    #
-    #     logging.debug("[{self.name}] Node stopped.".format(**locals()))
-    #     return exitstatus  # returning last exit status from the update function
-    #
-    #     # all context managers are destroyed properly here
-
 
 
 
