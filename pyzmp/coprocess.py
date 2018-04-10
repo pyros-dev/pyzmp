@@ -128,6 +128,7 @@ class CoProcess(object):
 
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
     def __init__(self, name=None, context_manager=None, target=None, args=None, kwargs=None):
+        # TODO : types hint to check context signature would avoid concurrency issues
         """
         Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
         :param name: Name of the node

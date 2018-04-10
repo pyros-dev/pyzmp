@@ -242,7 +242,7 @@ def test_process_running_as_context_manager():
 
 
 
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(5)
 def test_context_before_started():
     """Checks that a coprocess initializes its context before starting """
 
@@ -254,11 +254,11 @@ def test_context_before_started():
 
     # We can use the context to setup the value in the namespace
     @contextlib.contextmanager
-    def ctxtuser():
+    def ctxtuser(intval, *args, **kwargs):
         # to make sure we are in another process
         assert os.getpid() != mypid
         # ns is referenced in this closure and proxy has been passed to child process
-        ns.kwarg = 42
+        ns.kwarg = intval
         yield ns
         ns.kwarg = None  # to make sure we exit before shutdown returns
 
