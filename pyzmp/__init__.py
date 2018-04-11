@@ -24,6 +24,7 @@ from __future__ import absolute_import
 
 from .exceptions import UnknownServiceException, UnknownRequestTypeException, UnknownResponseTypeException
 from .master import manager
+from .coprocess import CoProcess
 from .node import Node, current_node
 from .service import Service, services, discover, ServiceCallTimeout
 
@@ -38,6 +39,6 @@ from .helpers import process_watcher_cm
 
 __all__ = [
     'UnknownServiceException', 'UnknownRequestTypeException', 'UnknownResponseTypeException',
-    'Node', 'nodes', 'current_node',
+    'Node', 'current_node',
     'Service', 'services', 'discover', 'ServiceCallTimeout'
 ]

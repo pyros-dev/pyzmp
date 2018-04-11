@@ -159,7 +159,7 @@ def test_node_creation_args_delegate():
         ns.arg -= fortytwo
         return ns.arg
 
-    n1 = pyzmp.Node(args=(ns.arg,), target=arguser)
+    n1 = pyzmp.Node(args=(ns.arg,), loop_target=arguser)
     assert not n1.is_alive()
     svc_url = n1.start()
     assert n1.is_alive()
@@ -206,7 +206,7 @@ def test_node_creation_kwargs_delegate():
         ns.kwarg -= intval
         return ns.kwarg
 
-    n1 = pyzmp.Node(kwargs={'intval': ns.kwarg, }, target=kwarguser)
+    n1 = pyzmp.Node(kwargs={'intval': ns.kwarg, }, loop_target=kwarguser)
     assert not n1.is_alive()
     svc_url = n1.start()
     assert n1.is_alive()
@@ -304,9 +304,9 @@ def test_update_rate():
 
 
 
-### TODO : more testing in case of crash in process, exception, signal, etc.
-
+# Just in case we run this directly
 if __name__ == '__main__':
-
-    import nose
-    nose.runmodule()
+    import pytest
+    pytest.main([
+        '-s', __file__,
+])

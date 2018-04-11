@@ -99,6 +99,7 @@ except ImportError:
 # node3 <--topic_cb-- node2 <--topic_cb-- node1
 
 from .master import manager
+from .coprocess import CoProcess, maybe_tuple
 from .exceptions import UnknownServiceException, UnknownRequestTypeException
 from .message import ServiceRequest, ServiceRequest_dictparse, ServiceResponse, ServiceException
 from .service import service_provider_cm
@@ -111,9 +112,6 @@ nodes_lock = manager.Lock()
 nodes = manager.dict()
 
 
-@contextlib.contextmanager
-def dummy_cm():
-    yield None
 
 
 @contextlib.contextmanager
@@ -133,12 +131,12 @@ def node_cm(node_name, svc_address):
 
 # TODO : Nodelet ( thread, with fast intraprocess zmq comm - entity system design /vs/threadpool ?)
 # CAREFUL here : multiprocessing documentation specifies that a process object can be started only once...
-class Node(object):
+class Node(CoProcess):
 
     EndPoint = namedtuple("EndPoint", "self func")
 
     # TODO : allow just passing target to be able to make a Node from a simple function, and also via decorator...
-    def __init__(self, name=None, socket_bind=None, context_manager=None, target=None, args=None, kwargs=None):
+    def __init__(self, name=None, socket_bind=None, context_manager=None, loop_target=None, args=None, kwargs=None):
         """
         Initializes a ZMP Node (Restartable Python Process communicating via ZMQ)
         :param name: Name of the node
@@ -146,135 +144,19 @@ class Node(object):
         :param context_manager: a context_manager to be used with run (in a with statement)
         :return:
         """
-        # TODO check name unicity
-        # using process as delegate
-        self._pargs = {
-            'name': name or str(uuid.uuid4()),
-            'args': args or (),
-            'kwargs': kwargs or {},
-            'target': self.run,  # Careful : our run() is not the same as the one for Process
-        }
-        # Careful : our own target is not the same as the one for Process
-        self._target = target or self.update  # we expect the user to overload update in child class.
 
-        #: the actual process instance. lazy creation on start() call only.
-        self._process = None
+        super(Node, self).__init__(name=name, context_manager=context_manager, target=self.receive_reply, args=args, kwargs=kwargs)
 
-        #: whether or not the node name should be set as the actual process title
-        #: replacing the string duplicated from the python interpreter run
-        self.new_title = True
+        self._loop_target = loop_target or self.update
 
-        self.context_manager = context_manager or dummy_cm  # TODO: extend to list if possible ( available for python >3.1 only )
-        self.exit = multiprocessing.Event()
-        self.started = multiprocessing.Event()
         self.listeners = {}
         self._providers = {}
+
+        # TODO : proc or node ?
         self.tmpdir = tempfile.mkdtemp(prefix='zmp-' + self.name + '-')
         # if no socket is specified the services of this node will be available only through IPC
         self._svc_address = socket_bind if socket_bind else 'ipc://' + self.tmpdir + '/services.pipe'
 
-    def __enter__(self):
-        # __enter__ is called only if we pass this instance to with statement ( after __init__ )
-        # start only if needed (so that we can hook up a context manager to a running node) :
-        if not self.is_alive():
-            self.start()
-        return self
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        # make sure we cleanup when we exit
-        self.shutdown()
-
-    def has_started(self):
-        """
-        :return: True if the node has started (update() might not have been called yet). Might still be alive, or not...
-        """
-        return self.started.is_set()
-
-    ### Process API delegation ###
-    def is_alive(self):
-        if self and self._process:
-            return self._process.is_alive()
-
-    def join(self, timeout=None):
-        if not self._process:
-            # blocking on started event before blocking on join
-            self.started.wait(timeout=timeout)
-        return self._process.join(timeout=timeout)
-
-    @property
-    def name(self):
-        if self and self._process:
-            return self._process.name
-        else:
-            return self._pargs.get('name', "ZMPNode")
-
-    @name.setter
-    def name(self, name):
-        if self and self._process:
-            self._process.name = name
-            # only reset the name arg if it was accepted by the setter
-            self._pargs.set('name', self._process.name)
-        else:
-            # TODO : maybe we should be a bit more strict here ?
-            self._pargs.set('name', name)
-
-    @property
-    def daemon(self):
-        """
-        Return whether process is a daemon
-        :return:
-        """
-        if self._process:
-            return self._process.daemon
-        else:
-            return self._pargs.get('daemonic', False)
-
-    @daemon.setter
-    def daemon(self, daemonic):
-        """
-        Set whether process is a daemon
-        :param daemonic:
-        :return:
-        """
-        if self._process:
-            self._process.daemonic = daemonic
-        else:
-            self._pargs['daemonic'] = daemonic
-
-    @property
-    def authkey(self):
-        return self._process.authkey
-
-    @authkey.setter
-    def authkey(self, authkey):
-        """
-        Set authorization key of process
-        """
-        self._process.authkey = authkey
-
-    @property
-    def exitcode(self):
-        """
-        Return exit code of process or `None` if it has yet to stop
-        """
-        if self._process:
-            return self._process.exitcode
-        else:
-            return None
-
-    @property
-    def ident(self):
-        """
-        Return identifier (PID) of process or `None` if it has yet to start
-        """
-        if self._process:
-            return self._process.ident
-        else:
-            return None
-
-    def __repr__(self):
-        # TODO : improve this
-        return self._process.__repr__()
 
     def start(self, timeout=None):
         """
@@ -283,47 +165,14 @@ class Node(object):
         None waits until the update has been called at least once.
         """
 
-        # we lazily create our process delegate (with same arguments)
-        if self.daemon:
-            daemonic = True
-        else:
-            daemonic = False
-
-        pargs = self._pargs.copy()
-        pargs.pop('daemonic', None)
-
-        self._process = multiprocessing.Process(**pargs)
-
-        self._process.daemon = daemonic
-
-        if self.is_alive():
-            # if already started, we shutdown and join before restarting
-            # not timeout will bock here (default join behavior).
-            # otherwise we simply use the same timeout.
-            self.shutdown(join=True, timeout=timeout)  # TODO : only restart if no error (check exitcode)
-            self.start(timeout=timeout)  # recursive to try again if needed
-        else:
-            self._process.start()
-
-        # timeout None means we want to wait and ensure it has started
-        # deterministic behavior, like is_alive() from multiprocess.Process is always true after start()
-        if self.started.wait(timeout=timeout):  # blocks until we know true or false
+        started = super(Node, self).start(timeout=timeout)
+        if started:
+            # TODO : return something produced in the context manager passed
             return self._svc_address  # returning the zmp url as a way to connect to the node
             # CAREFUL : doesnt make sense if this node only run a one-time task...
         # TODO: futures and ThreadPoolExecutor (so we dont need to manage the pool ourselves)
         else:
             return False
-
-    # TODO : Implement a way to redirect stdout/stderr, or even forward to parent ?
-    # cf http://ryanjoneil.github.io/posts/2014-02-14-capturing-stdout-in-a-python-child-process.html
-
-    def terminate(self):
-        """Forcefully terminates the underlying process (using SIGTERM)"""
-        return self._process.terminate()
-        # TODO : maybe redirect to shutdown here to avoid child process leaks ?
-
-    ### Node specific API ###
-    # TODO : find a way to separate process management and service provider API
 
     def provides(self, svc_callback, service_name=None):
         service_name = service_name or svc_callback.__name__
@@ -352,6 +201,54 @@ class Node(object):
         # TODO : Check which way is better (can also be used to run external process, other functions, like Process)
         return None  # we keep looping by default (need to deal with services here...)
 
+    def receive_reply(self, poller, svc_skt, *args, **kwargs):
+        # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
+        socks = dict(poller.poll(timeout=100))
+        if svc_skt in socks and socks[svc_skt] == zmq.POLLIN:
+            req = None
+            try:
+                req_unparsed = svc_skt.recv()
+                req = ServiceRequest_dictparse(req_unparsed)
+                if isinstance(req, ServiceRequest):
+                    if req.service and req.service in self._providers.keys():
+
+                        request_args = pickle.loads(req.args) if req.args else ()
+                        # add 'self' if providers[req.service] is a bound method.
+                        if self._providers[req.service].self:
+                            request_args = (self,) + request_args
+                        request_kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
+
+                        resp = self._providers[req.service].func(*request_args, **request_kwargs)
+                        svc_skt.send(ServiceResponse(
+                            service=req.service,
+                            response=pickle.dumps(resp),
+                        ).serialize())
+
+                    else:
+                        raise UnknownServiceException("Unknown Service {0}".format(req.service))
+                else:  # should not happen : dictparse would fail before reaching here...
+                    raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
+            except Exception:  # we transmit back all errors, and keep spinning...
+                exctype, excvalue, tb = sys.exc_info()
+                # trying to make a pickleable traceback
+                try:
+                    ftb = Traceback(tb)
+                except TypeError as exc:
+                    ftb = "Traceback manipulation error: {exc}. Verify that python-tblib is installed.".format(exc=exc)
+
+                # sending back that exception with traceback
+                svc_skt.send(ServiceResponse(
+                    service=req.service,
+                    exception=ServiceException(
+                        exc_type=pickle.dumps(exctype),
+                        exc_value=pickle.dumps(excvalue),
+                        traceback=pickle.dumps(ftb),
+                    )
+                ).serialize())
+
+        # triggering other updates
+        self._loop_target(*args, **kwargs)
+
     def shutdown(self, join=True, timeout=None):
         """
         Clean shutdown of the node.
@@ -368,32 +265,15 @@ class Node(object):
         exitcode = self._process.exitcode if self._process else None  # we return None if the process was never started
         return exitcode
 
-    def run(self, *args, **kwargs):
-        """
-        The Node main method, running in a child process (similar to Process.run() but also accepts args)
-        A children class can override this method, but it needs to call super().run(*args, **kwargs)
-        for the node to start properly and call update() as expected.
-        :param args: arguments to pass to update()
-        :param kwargs: keyword arguments to pass to update()
-        :return: last exitcode returned by update()
-        """
-        # TODO : make use of the arguments ? since run is now the target for Process...
-
-        exitstatus = None  # keeping the semantic of multiprocessing.Process : running process has None
-
-        if setproctitle and self.new_title:
-            setproctitle.setproctitle("{0}".format(self.name))
-
-        print('[{node}] Node started as [{pid} <= {address}]'.format(node=self.name, pid=self.ident, address=self._svc_address))
-
-
+    @contextlib.contextmanager
+    def child_context(self, *args, **kwargs):
         zcontext = zmq.Context()  # check creating context in init ( compatibility with multiple processes )
         # Apparently not needed ? Ref : https://github.com/zeromq/pyzmq/issues/770
         zcontext.setsockopt(socket.SO_REUSEADDR, 1)  # required to make restart easy and avoid debugging traps...
         svc_socket = zcontext.socket(zmq.REP)  # Ref : http://api.zeromq.org/2-1:zmq-socket # TODO : ROUTER instead ?
 
         try:  # attempting binding socket
-            svc_socket.bind(self._svc_address,)
+            svc_socket.bind(self._svc_address, )
         except zmq.ZMQError as ze:
             if ze.errno == errno.ENOENT:  # No such file or directory
                 # TODO : handle all possible cases
@@ -414,105 +294,19 @@ class Node(object):
         except Exception as e:
             raise
 
-
         poller = zmq.Poller()
         poller.register(svc_socket, zmq.POLLIN)
 
         # Initializing all context managers
         with service_provider_cm(
-                    self.name, self._svc_address, self._providers
-                ), node_cm(self.name, self._svc_address), self.context_manager() as cm:
+                self.name, self._svc_address, self._providers
+        ), node_cm(self.name, self._svc_address), super(Node, self).child_context(*args, **kwargs) as inhctxt:
+            yielded = (poller, svc_socket)
+            if inhctxt:
+                yielded = yielded + maybe_tuple(inhctxt)  # inspiration from monads ? check http://www.valuedlessons.com/2008/01/monads-in-python-with-nice-syntax.html
+            yield yielded
 
-            # Starting the clock
-            start = time.time()
-
-            first_loop = True
-            # loop listening to connection
-            while not self.exit.is_set():
-
-                # signalling startup only the first time, just after having check for exit request.
-                # We need to guarantee at least ONE call to update.
-                if first_loop:
-                    self.started.set()
-
-                # blocking. messages are received ASAP. timeout only determine update/shutdown speed.
-                socks = dict(poller.poll(timeout=100))
-                if svc_socket in socks and socks[svc_socket] == zmq.POLLIN:
-                    req = None
-                    try:
-                        req_unparsed = svc_socket.recv()
-                        req = ServiceRequest_dictparse(req_unparsed)
-                        if isinstance(req, ServiceRequest):
-                            if req.service and req.service in self._providers.keys():
-
-                                request_args = pickle.loads(req.args) if req.args else ()
-                                # add 'self' if providers[req.service] is a bound method.
-                                if self._providers[req.service].self:
-                                    request_args = (self, ) + request_args
-                                request_kwargs = pickle.loads(req.kwargs) if req.kwargs else {}
-
-                                resp = self._providers[req.service].func(*request_args, **request_kwargs)
-                                svc_socket.send(ServiceResponse(
-                                    service=req.service,
-                                    response=pickle.dumps(resp),
-                                ).serialize())
-
-                            else:
-                                raise UnknownServiceException("Unknown Service {0}".format(req.service))
-                        else:  # should not happen : dictparse would fail before reaching here...
-                            raise UnknownRequestTypeException("Unknown Request Type {0}".format(type(req.request)))
-                    except Exception:  # we transmit back all errors, and keep spinning...
-                        exctype, excvalue, tb = sys.exc_info()
-                        # trying to make a pickleable traceback
-                        try:
-                            ftb = Traceback(tb)
-                        except TypeError as exc:
-                            ftb = "Traceback manipulation error: {exc}. Verify that python-tblib is installed.".format(exc=exc)
-
-                        # sending back that exception with traceback
-                        svc_socket.send(ServiceResponse(
-                            service=req.service,
-                            exception=ServiceException(
-                                exc_type=pickle.dumps(exctype),
-                                exc_value=pickle.dumps(excvalue),
-                                traceback=pickle.dumps(ftb),
-                            )
-                        ).serialize())
-
-                # time is ticking
-                # TODO : move this out of here. this class should require only generic interface to update method.
-                now = time.time()
-                timedelta = now - start
-                start = now
-
-                # replacing the original Process.run() call, passing arguments to our target
-                if self._target:
-                    # bwcompat
-                    kwargs['timedelta'] = timedelta
-
-                    # TODO : use return code to determine when/how we need to run this the next time...
-                    # Also we need to keep the exit status to be able to call external process as an update...
-
-                    logging.debug("[{self.name}] calling {self._target.__name__} with args {args} and kwargs {kwargs}...".format(**locals()))
-                    exitstatus = self._target(*args, **kwargs)
-
-                if first_loop:
-                    first_loop = False
-
-                if exitstatus is not None:
-                    break
-
-            if self.started.is_set() and exitstatus is None and self.exit.is_set():
-                # in the not so special case where we started, we didnt get exit code and we exited,
-                # this is expected as a normal result and we set an exitcode here of 0
-                # As 0 is the conventional success for unix process successful run
-                exitstatus = 0
-
-        logging.debug("[{self.name}] Node stopped.".format(**locals()))
-        return exitstatus  # returning last exit status from the update function
-
-        # all context managers are destroyed properly here
-
+        # all context managers are cleanedup here
 
 
 
