@@ -10,7 +10,7 @@ PyZMP
     * - docs
       - |docs|
     * - tests
-      - |travis| |requires| |landscape| |quantifiedcode|
+      - |travis| |requires| |landscape|
     * - Python
       - |version| |downloads| |wheel| |supported-versions| |supported-implementations|
     * - ROS
@@ -23,10 +23,6 @@ PyZMP
 .. |travis| image:: https://travis-ci.org/asmodehn/pyzmp.svg?branch=master
     :alt: Travis-CI Build Status
     :target: https://travis-ci.org/asmodehn/pyzmp
-
-.. |quantifiedcode| image:: https://www.quantifiedcode.com/api/v1/project/6e2a3dc5e5b142e9b7db86d0dcf1be3c/badge.svg
-    :target: https://www.quantifiedcode.com/app/project/6e2a3dc5e5b142e9b7db86d0dcf1be3c
-    :alt: Code issues
 
 .. |requires| image:: https://requires.io/github/asmodehn/pyzmp/requirements.svg?branch=master
     :alt: Requirements Status
