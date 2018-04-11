@@ -2,11 +2,22 @@ Changelog
 =========
 
 
+0.0.17 (2017-05-18)
+-------------------
+- Removing quantified code badge. added gitchangelog config. [AlexV]
+- Improved tutorial. [AlexV]
+- Fixing coprocess test. [AlexV]
+- Now passing arguments to context generators. [AlexV]
+- Extracted coprocess from node. tests passing. [AlexV]
+- Added test to ensure update is called once before we return control
+  from start() call. [AlexV]
+- Update twine from 1.8.1 to 1.11.0. [pyup-bot]
+- Typo. [AlexV]
+
+
 0.0.16 (2017-05-18)
 -------------------
-- Merge pull request #27 from asmodehn/expose_url. [AlexV]
-
-  default node name is now uuid. now returning svc address on node start.
+- V0.0.16. [alexv]
 - Signaling node start after checking for exit request, to guarantee at
   least one call to update. [alexv]
 - Now signalling started before running target function. improved error
@@ -19,25 +30,10 @@ Changelog
 0.0.15 (2017-05-02)
 -------------------
 - Preparing 0.0.15. [AlexV]
-- Merge pull request #24 from asmodehn/pyup-update-
-  gitchangelog-2.4.1-to-3.0.3. [AlexV]
-
-  Update gitchangelog to 3.0.3
 - Update gitchangelog from 2.4.1 to 3.0.3. [pyup-bot]
-- Merge pull request #18 from asmodehn/daemon_node. [AlexV]
-
-  now able to create daemon nodes
 - Now able to create daemon nodes. [alexv]
-- Merge pull request #13 from asmodehn/setproctitle. [AlexV]
-
-  integrating setproctitle inside the node.run() method.
 - Adding very basic node process watcher. [AlexV]
 - Refining setproctitle usage. [AlexV]
-- Merge branch 'master' of https://github.com/asmodehn/pyzmp into
-  setproctitle. [AlexV]
-- Merge pull request #16 from asmodehn/setup_rosdevelop. [AlexV]
-
-  setup.py rosdevelop command
 - Small description change. [alexv]
 - Importing modules for rosdevelop command only when that command is run
   so they are not dependencies for the python package itself. [alexv]
@@ -46,15 +42,9 @@ Changelog
 - First version of rosdevelop setup.py command. [alexv]
 - Fancy badges for README. [alexv]
 - Fixing travis badge for ros release. [AlexV]
-- Merge pull request #15 from asmodehn/pyup-initial-update. [AlexV]
-
-  Initial Update
 - Pin gitchangelog to latest version 2.4.1. [pyup-bot]
 - Pin twine to latest version 1.8.1. [pyup-bot]
 - Integrating setproctitle inside the node.run() method. [AlexV]
-- Merge pull request #7 from dhirajdhule/master. [AlexV]
-
-  added reference to pyzmp tutorials in readme
 - Added reference to pyzmp tutorials in readme. [dhiraj dhule]
 - Cleaned up node logs. fixed node update test. [alexv]
 - Adding badge for ROS release build. [alexv]
@@ -67,10 +57,6 @@ Changelog
 - Removing package.xml. doing thirdparty release from release repo now.
   [alexv]
 - Moving docs to doc. [alexv]
-- Merge branch 'docs' of https://github.com/asmodehn/pyzmp. [alexv]
-
-  Conflicts:
-  	CHANGELOG.rst
 - Added doc-requirements. [AlexV]
 - Added tutorial and example changelog generated with gitchangelog.
   [AlexV]
@@ -109,9 +95,6 @@ Changelog
 0.0.10 (2016-06-23)
 -------------------
 - Preparing version 0.0.10. [alexv]
-- Merge pull request #1 from asmodehn/deterministic_node_start. [AlexV]
-
-  Deterministic node start
 - Documenting test methods to make quantifiedcode happy. [alexv]
 - Updated quantifiedcode badge to point to correct project. [alexv]
 - Return exitcode 0 if update ran, but never returned one. made run()
@@ -170,17 +153,8 @@ Changelog
   to improve python3 compatibility. [alexv]
 - Starting to adapt to new configuration from pyros-setup. [alexv]
 - Now using catkin_pure_python. [alexv]
-- Merge pull request #71 from gitter-badger/gitter-badge. [AlexV]
-
-  Add a Gitter chat badge to README.rst
 - Add Gitter badge. [The Gitter Badger]
-- Merge pull request #69 from asmodehn/multiclient. [AlexV]
-
-  cosmetics, comments and small fixes...
 - Cosmetics, comments and small fixes... [alexv]
-- Merge pull request #62 from asmodehn/remove_unused_features. [AlexV]
-
-  Remove unused features
 - Readme regarding IoT. [alexv]
 - Cosmetics. [alexv]
 - Changing reinit method to a setup service. now reinitialize
@@ -191,26 +165,19 @@ Changelog
 - Fixing package dependencies for catkin. [alexv]
 - Fixing catkin build. [alexv]
 - Removing unused ROS service specifications. [alexv]
-- Merge branch 'improve_exceptions_handling' into
-  remove_unused_features. [alexv]
 - Improved exception handling. adding mock client to make unittests
   easy. cosmetics. [alexv]
 - Improved Readme. [AlexV]
 - Removing dynamic_reconfigure. [alexv]
 - Removed rocon feature. cleanup. [alexv]
 - Exposing servicecall timeout exception. cosmetics. [alexv]
-- Merge pull request #55 from stonier/verbosity. [AlexV]
-
-  Logging : WARN -> INFO
 - Warn -> info when it's not meant to be alarming to the users. [Daniel
   Stonier]
 - Fixing log warn -> info for startup args. [alexv]
 - Fixme comments. [alexv]
-- Merge commit '971199c' into indigo-devel. [alexv]
 - Adding simple test to assert rospy potentially strange behaviors.
   separating cache and non cache tests. catching connection_cache proxy
   init timeout, showing error and disabling. [alexv]
-- Merge commit '15aab53' into indigo-devel. [alexv]
 - Adding custom manager argument in basenode, and making shutdown
   possible override more obvious. [alexv]
 - ZMP : services and node advertisement now done in context managers.
@@ -219,24 +186,14 @@ Changelog
 - Improving base support to pass diff instead of query full state
   everytime. now with callback called from connection cache proxy to
   only process list if change happens. [alexv]
-- Merge pull request #48 from asmodehn/connection_cache. [Daniel
-  Stonier]
-
-  Connection cache
 - Fixing reinit to be delayed if ros interface not ready yet. [alexv]
 - Fixing pyrosROS test with latest pyros_test. [alexv]
 - Adding pyrosRos test to catkin tests. [alexv]
 - Reiniting connection cache if dynamic_reconfigure disable/enable it.
   [alexv]
-- Merge branch 'strict-python-exp' into connection_cache. [alexv]
 - Using enable_cache in dynamic_reconfigure to be able to dynamically
   switch if needed. [alexv]
 - Fixed populating empty message instance. comments. [alexv]
-- Merge pull request #50 from asmodehn/strict-python-exp. [AlexV]
-
-  Strict python experiment
-- Merge branch 'connection_cache' of https://github.com/asmodehn/pyros
-  into strict-python-exp. [alexv]
 - Adding missing rosnode as test dependency. [AlexV]
 - Disabling roconinterface dynamic import. [AlexV]
 - Moving more nodes to pyros-test. [AlexV]
@@ -248,9 +205,6 @@ Changelog
   from python venv. [AlexV]
 - Added generated code for dynamic_reconfigure. [AlexV]
 - Adding requirements, fixing setup.py for setuptools. [AlexV]
-- Merge pull request #49 from asmodehn/pyros_setup_fixes. [AlexV]
-
-  now allowing to delay the import of rosinterface subpackage and passi…
 - Now allowing to delay the import of rosinterface subpackage and
   passing base_path to find ROS environment dynamically. [alexv]
 - Using ros-shadow-fixed for travis. [AlexV]
@@ -276,9 +230,6 @@ Changelog
 ------------------
 - Doing zmp tests one by one to workaround nose hanging bug with option
   --with-xunit. [alexv]
-- Merge pull request #45 from asmodehn/update_timed. [AlexV]
-
-  ZMP node now passing timedelta to update.
 - Making service and param new style classes. [alexv]
 - Fixing throttling to reinitialize last_update in basenode. [alexv]
 - Fixing a few quantifiedcode issues... [alexv]
@@ -294,18 +245,9 @@ Changelog
 - Fixing basic test nodes return message type. cosmetics. [alexv]
 - Reviewing README. [alexv]
 - Changelog for 0.1.0. cosmetics. [alexv]
-- Merge pull request #43 from asmodehn/autofix/wrapped2_to3_fix. [AlexV]
-
-  Fix "Prefer `format()` over string interpolation operator" issue
 - Migrated `%` string formating. [Cody]
 - Fixing badges after rename. [alexv]
-- Merge pull request #42 from asmodehn/autofix/wrapped2_to3_fix. [AlexV]
-
-  Fix "Avoid mutable default arguments" issue
 - Avoid mutable default arguments. [Cody]
-- Merge pull request #41 from asmodehn/mp_exception. [AlexV]
-
-  Multiprocess
 - Made namedtuple fields optional like for protobuf protocol. [alexv]
 - Fixing zmp tests with namedtuple protocol. [alexv]
 - Fixing catkin cmakelists after test rename. [alexv]
@@ -376,12 +318,6 @@ Changelog
 - Implemented functional API, abstract base interface class,
   mockinterface tests. [alexv]
 - Moving and fixing tests. [alexv]
-- Merge branch 'indigo-devel' of https://github.com/asmodehn/pyros into
-  mp_exception. [alexv]
-
-  Conflicts:
-  	setup.py
-  	src/rostful_node/rostful_node_process.py
 - Changing ros package name after repository rename. [alexv]
 - Fixing setup.py for recent catkin. [alexv]
 - Protecting rospy from unicode args list. [alexv]
@@ -439,16 +375,8 @@ Changelog
   [alexv]
 - Fixing travis badge. [alexv]
 - Adding travis badge. [alexv]
-- Merge branch 'indigo-devel' of https://github.com/asmodehn/rostful-
-  node into indigo-devel. [alexv]
-- Merge pull request #33 from asmodehn/travis. [AlexV]
-
-  starting travis integration for autotest
 - Starting travis integration for autotest. [alexv]
 - Adding rostopic as a test_depend. [alexv]
-- Merge pull request #32 from asmodehn/params. [AlexV]
-
-  Params
 - Fixes to make this node work again with rostful cosmetics and
   cleanups. [alexv]
 - First implementation to expose params to python the same way as we do
@@ -464,15 +392,11 @@ Changelog
 - Fixing corner cases when passing None as message content. invalid and
   should not work. [alexv]
 - Fixing tests. and changed api a little. [alexv]
-- Merge branch 'indigo-devel' of https://github.com/asmodehn/rostful-
-  node into subprocess. [alexv]
 - Removing useless fancy checks to force disabling rocon when set to
   false. updated rapp_watcher not working anymore. [AlexV]
 - Rocon_std_msgs changed from PlatformInfo.uri to MasterInfo.rocon_uri.
   [AlexV]
 - Send empty dicts instead of none from client. [Michal Staniaszek]
-- Merge branch 'subprocess' of https://github.com/asmodehn/rostful-node
-  into subprocess. [alexv]
 - Service and topic exceptions caught and messages displayed. [Michal
   Staniaszek]
 - Fleshed out topic and service info tuples. [Michal Staniaszek]
@@ -494,9 +418,6 @@ Changelog
 - Fix crash when reconfigure removes topics, started on unit tests.
   [Michal Staniaszek]
 - Fixing removing from dictionary topic_args. [alexv]
-- Merge pull request #28 from asmodehn/multi-instance-delete. [AlexV]
-
-  Fixed topic deletion when multiple publishers/subscribers exist on the same topic
 - Stopped removal of slashes from front of topics. [Michal Staniaszek]
 - Fixed regex and add/remove issues with topics and services. [Michal
   Staniaszek]
@@ -512,16 +433,6 @@ Changelog
   Removed unnecessary ws_name code.
 
   Issue #27.
-- Merge pull request #26 from asmodehn/wildcards. [AlexV]
-
-  full regex, fixed reconfigure crash
-- Merge branch 'indigo-devel' into wildcards. [Michal Staniaszek]
-
-  Conflicts:
-  	src/rostful_node/ros_interface.py
-- Merge pull request #23 from asmodehn/waiting-fix. [AlexV]
-
-  Services are no longer lost, waiting lists are used more logically.
 - Fix *_waiting list usage, service loss no longer permanent. [Michal
   Staniaszek]
 
@@ -538,9 +449,6 @@ Changelog
   Can now use full regex in topic or service strings to match incoming strings.
 
   Fixed crash when dynamic reconfigure receives an invalid string
-- Merge pull request #22 from asmodehn/feature-devel. [AlexV]
-
-  Wildcard implementation
 - Strings with no match characters don't add unwanted topics. [Michal
   Staniaszek]
 
@@ -563,12 +471,6 @@ Changelog
 - Added important technical TODO. [alexv]
 - Fixing bad merge. [alexv]
 - Fixing unitests after merge. [AlexV]
-- Merge branch 'indigo-devel' of https://github.com/asmodehn/rostful-
-  node into rosless. [AlexV]
-
-  Conflicts:
-  	src/rostful_node/rostful_client.py
-  	src/rostful_node/rostful_node.py
 - Quick fix to keep disappeared topics around, waiting, in case they
   come back up... [alexv]
 - Turning off consume/noloss behavior. should not be the default. should
@@ -587,8 +489,6 @@ Changelog
   connection. added more unit tests for rostful mock. [AlexV]
 - Added rostful mock object ( useful if no ROS found ). improved
   structure and added small unit test. [AlexV]
-- Merge branch 'indigo-devel' of https://github.com/asmodehn/rostful-
-  node into indigo-devel. [AlexV]
 - Changing cfg file name to fix install. [AlexV]
 - Comments TODO to remember to fix hack. [AlexV]
 - Tentative fix of cfg... comments. [AlexV]
@@ -596,16 +496,11 @@ Changelog
 - Commenting out icon image. no cache home on robot. need to find a new
   strategy. [AlexV]
 - Removed useless broken services. [AlexV]
-- Merge pull request #16 from asmodehn/indigo. [AlexV]
-
-  fixing catkin_make install with dynamic reconfigure.
 - Fixing catkin_make install with dynamic reconfigure. [AlexV]
 - Adding bloom release in release process to sync with pypi release.
   [AlexV]
 - Fixes for release and cosmetics. [AlexV]
 - Preparing pypi release. [AlexV]
-- Merge branch 'indigo-devel' of https://github.com/asmodehn/rostful-
-  node into indigo-devel. [AlexV]
 - Improving rostful node API. Adding rostful pipe client and python pipe
   protocol. removed redundant ros services. [AlexV]
 - Simplifying rapp start and stop by using rapp_watcher methods. [AlexV]
