@@ -1,0 +1,8 @@
+# Requirements for running on top of kinetic
+
+# Package Dependencies need to match ROS (or xenial's) package version
+
+
+tblib==1.2.0
+six==1.10.0
+pyzmq==15.2.0

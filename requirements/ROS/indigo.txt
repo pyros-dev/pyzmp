@@ -1,0 +1,7 @@
+# Requirements for running on top of indigo
+
+# Package Dependencies need to match ROS (or trusty's) package version
+
+tblib==1.2.0
+# six==1.5.2  # skipping for now ( breaks with pytest )
+pyzmq==14.0.1
